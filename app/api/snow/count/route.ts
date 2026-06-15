@@ -13,12 +13,12 @@ export async function GET() {
     const [result] = await prisma.$queryRaw<Array<{ count: bigint }>>`
       SELECT COUNT(*)::bigint AS count
       FROM solicitacoes_snow s
-      WHERE s.total_atendidas > (
-        SELECT COUNT(*)::integer
+      WHERE EXISTS (
+        SELECT 1
         FROM solicitacoes_snow_itens i
         WHERE i.solicitacao_snow_id = s.id
           AND i.status IN ('atendida', 'inconsistente')
-          AND i.planner_status = 'concluido'
+          AND i.planner_status IS DISTINCT FROM 'concluido'
       )
     `
 

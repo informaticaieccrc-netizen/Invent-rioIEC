@@ -65,7 +65,7 @@ export async function GET(request: Request) {
       status: { in: ['atendida', 'inconsistente'] },
     }
 
-    const [plannerPendentes, plannerEmAtendimento, plannerResolvidas] = await Promise.all([
+    const [plannerPendentes, plannerEmAtendimento, plannerResolvidas, inconsistentesAbertas] = await Promise.all([
       prisma.solicitacoes_snow_itens.count({
         where: {
           ...itemWhere,
@@ -84,15 +84,33 @@ export async function GET(request: Request) {
           planner_status: 'concluido',
         },
       }),
+      prisma.solicitacoes_snow_itens.count({
+        where: {
+          ...(inicio || fim
+            ? {
+                criado_em: {
+                  ...(inicio ? { gte: inicio } : {}),
+                  ...(fim ? { lte: fim } : {}),
+                },
+              }
+            : {}),
+          status: 'inconsistente',
+          planner_status: { not: 'concluido' },
+        },
+      }),
     ])
+
+    const atendidas = totals._sum.total_atendidas ?? 0
+    const inconsistentesTotais = totals._sum.total_inconsistentes ?? 0
 
     return NextResponse.json({
       total_solicitacoes: totals._count._all ?? 0,
       total_itens: totals._sum.total_recebido ?? 0,
-      atendidas: totals._sum.total_atendidas ?? 0,
+      atendidas,
+      encontradas: atendidas + inconsistentesTotais,
       nao_atendidas: totals._sum.total_nao_atendidas ?? 0,
       em_quarentena: totals._sum.total_quarentena ?? 0,
-      inconsistentes: totals._sum.total_inconsistentes ?? 0,
+      inconsistentes: inconsistentesAbertas,
       planner_pendentes: plannerPendentes,
       planner_em_atendimento: plannerEmAtendimento,
       planner_resolvidas: plannerResolvidas,

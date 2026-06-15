@@ -66,7 +66,7 @@ export async function GET(request: Request) {
     const ids = data.map(item => item.id)
     const plannerGroups = ids.length > 0
       ? await prisma.solicitacoes_snow_itens.groupBy({
-          by: ['solicitacao_snow_id', 'planner_status'],
+          by: ['solicitacao_snow_id', 'status', 'planner_status'],
           where: {
             solicitacao_snow_id: { in: ids },
             status: { in: ['atendida', 'inconsistente'] },
@@ -76,30 +76,41 @@ export async function GET(request: Request) {
       : []
     const plannerBySolicitacao = plannerGroups.reduce((map, group) => {
       const current = map.get(group.solicitacao_snow_id) ?? {
+        total_operacional: 0,
         planner_pendentes: 0,
         planner_em_atendimento: 0,
         planner_concluidas: 0,
+        planner_abertas: 0,
+        total_inconsistentes_abertas: 0,
       }
 
+      current.total_operacional += group._count._all
       if (group.planner_status === 'concluido') current.planner_concluidas += group._count._all
-      else if (group.planner_status === 'assumido') current.planner_em_atendimento += group._count._all
-      else current.planner_pendentes += group._count._all
+      else {
+        current.planner_abertas += group._count._all
+        if (group.planner_status === 'assumido') current.planner_em_atendimento += group._count._all
+        else current.planner_pendentes += group._count._all
+        if (group.status === 'inconsistente') current.total_inconsistentes_abertas += group._count._all
+      }
 
       map.set(group.solicitacao_snow_id, current)
       return map
-    }, new Map<string, { planner_pendentes: number; planner_em_atendimento: number; planner_concluidas: number }>())
+    }, new Map<string, { total_operacional: number; planner_pendentes: number; planner_em_atendimento: number; planner_concluidas: number; planner_abertas: number; total_inconsistentes_abertas: number }>())
 
     const enriched = data.map(item => {
       const counters = plannerBySolicitacao.get(item.id) ?? {
+        total_operacional: 0,
         planner_pendentes: 0,
         planner_em_atendimento: 0,
         planner_concluidas: 0,
+        planner_abertas: 0,
+        total_inconsistentes_abertas: 0,
       }
 
       return {
         ...item,
         ...counters,
-        planner_resolvida: counters.planner_pendentes === 0 && counters.planner_em_atendimento === 0 && counters.planner_concluidas > 0,
+        planner_resolvida: counters.total_operacional > 0 && counters.planner_abertas === 0,
       }
     })
 
