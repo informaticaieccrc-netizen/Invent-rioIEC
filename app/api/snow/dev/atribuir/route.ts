@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
+import type { Session } from 'next-auth'
 import { Prisma } from '@prisma/client'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
@@ -8,7 +9,7 @@ import { SnowProcessingError } from '@/lib/snow/types'
 
 export const runtime = 'nodejs'
 
-function isDevSession(session: Awaited<ReturnType<typeof getServerSession>>) {
+function isDevSession(session: Session | null) {
   return (session?.user as any)?.perfil === 'dev'
 }
 

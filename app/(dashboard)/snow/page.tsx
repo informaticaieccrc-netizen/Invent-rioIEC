@@ -668,24 +668,28 @@ export default function SnowPage() {
       setRefreshKey(key => key + 1)
 
       if (target.itemId) {
-        setOperationalInspect(current => current?.id === target.itemId
-          ? {
-              ...current,
-              planner_status: 'concluido',
-              atendente_nome: json.itens?.[0]?.atendente_nome ?? current.atendente_nome,
-              atendente_codigo_pessoa: json.itens?.[0]?.atendente_codigo_pessoa ?? current.atendente_codigo_pessoa,
-              concluido_em: json.itens?.[0]?.concluido_em ?? current.concluido_em,
-            }
-          : current)
-        setInconsistentInspect(current => current?.id === target.itemId
-          ? {
-              ...current,
-              planner_status: 'concluido',
-              atendente_nome: json.itens?.[0]?.atendente_nome ?? current.atendente_nome,
-              atendente_codigo_pessoa: json.itens?.[0]?.atendente_codigo_pessoa ?? current.atendente_codigo_pessoa,
-              concluido_em: json.itens?.[0]?.concluido_em ?? current.concluido_em,
-            }
-          : current)
+        setOperationalInspect(current => {
+          if (!current || current.id !== target.itemId) return current
+
+          return {
+            ...current,
+            planner_status: 'concluido',
+            atendente_nome: json.itens?.[0]?.atendente_nome ?? current.atendente_nome,
+            atendente_codigo_pessoa: json.itens?.[0]?.atendente_codigo_pessoa ?? current.atendente_codigo_pessoa,
+            concluido_em: json.itens?.[0]?.concluido_em ?? current.concluido_em,
+          }
+        })
+        setInconsistentInspect(current => {
+          if (!current || current.id !== target.itemId) return current
+
+          return {
+            ...current,
+            planner_status: 'concluido',
+            atendente_nome: json.itens?.[0]?.atendente_nome ?? current.atendente_nome,
+            atendente_codigo_pessoa: json.itens?.[0]?.atendente_codigo_pessoa ?? current.atendente_codigo_pessoa,
+            concluido_em: json.itens?.[0]?.concluido_em ?? current.concluido_em,
+          }
+        })
       }
 
       const selectedId = selected?.id
@@ -718,24 +722,28 @@ export default function SnowPage() {
 
       toast.success(`Chamada atribuída para ${json.atendente_nome ?? 'usuário'}.`)
       setRefreshKey(key => key + 1)
-      setOperationalInspect(current => current?.id === itemId
-        ? {
-            ...current,
-            planner_status: json.planner_status ?? 'assumido',
-            atendente_nome: json.atendente_nome ?? current.atendente_nome,
-            atendente_codigo_pessoa: json.atendente_codigo_pessoa ?? current.atendente_codigo_pessoa,
-            assumido_em: json.assumido_em ?? current.assumido_em,
-          }
-        : current)
-      setInconsistentInspect(current => current?.id === itemId
-        ? {
-            ...current,
-            planner_status: json.planner_status ?? 'assumido',
-            atendente_nome: json.atendente_nome ?? current.atendente_nome,
-            atendente_codigo_pessoa: json.atendente_codigo_pessoa ?? current.atendente_codigo_pessoa,
-            assumido_em: json.assumido_em ?? current.assumido_em,
-          }
-        : current)
+      setOperationalInspect(current => {
+        if (!current || current.id !== itemId) return current
+
+        return {
+          ...current,
+          planner_status: json.planner_status ?? 'assumido',
+          atendente_nome: json.atendente_nome ?? current.atendente_nome,
+          atendente_codigo_pessoa: json.atendente_codigo_pessoa ?? current.atendente_codigo_pessoa,
+          assumido_em: json.assumido_em ?? current.assumido_em,
+        }
+      })
+      setInconsistentInspect(current => {
+        if (!current || current.id !== itemId) return current
+
+        return {
+          ...current,
+          planner_status: json.planner_status ?? 'assumido',
+          atendente_nome: json.atendente_nome ?? current.atendente_nome,
+          atendente_codigo_pessoa: json.atendente_codigo_pessoa ?? current.atendente_codigo_pessoa,
+          assumido_em: json.assumido_em ?? current.assumido_em,
+        }
+      })
 
       const selectedId = selected?.id
       if (selectedId) await reloadSelected(selectedId)

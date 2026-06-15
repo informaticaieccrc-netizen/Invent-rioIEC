@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
+import type { Session } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { processSnowWorkbook } from '@/lib/snow/service'
 import { SnowProcessingError } from '@/lib/snow/types'
@@ -9,7 +10,7 @@ export const maxDuration = 60
 
 const SNOW_DEFAULT_ORIGEM_EMAIL = 'smcgti.snow@pucminas.br'
 
-function isDevSession(session: Awaited<ReturnType<typeof getServerSession>>) {
+function isDevSession(session: Session | null) {
   return (session?.user as any)?.perfil === 'dev'
 }
 
