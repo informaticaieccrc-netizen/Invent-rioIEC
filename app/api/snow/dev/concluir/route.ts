@@ -42,7 +42,7 @@ export async function POST(request: Request) {
       : null
 
     if (usuarioId && !usuario) {
-      return NextResponse.json({ error: 'Usuário técnico não encontrado' }, { status: 404 })
+      return NextResponse.json({ error: 'Usuário não encontrado' }, { status: 404 })
     }
 
     const ids = itemId
