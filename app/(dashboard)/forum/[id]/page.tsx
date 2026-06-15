@@ -37,6 +37,7 @@ export default function TopicoPage() {
   const { data: session } = useSession()
   const userId = (session?.user as any)?.id as string
   const perfil = (session?.user as any)?.perfil as string
+  const isPrivileged = perfil === 'admin' || perfil === 'dev'
 
   const [topico, setTopico] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -323,9 +324,9 @@ export default function TopicoPage() {
           </div>
           
           {/* Ações admin / autor */}
-          {(topico.autor_id === userId || perfil === 'admin') && (
+          {(topico.autor_id === userId || isPrivileged) && (
             <div className="flex gap-1 shrink-0">
-              {perfil === 'admin' && (
+              {isPrivileged && (
                 <>
                   <button
                     type="button"
@@ -496,7 +497,7 @@ export default function TopicoPage() {
                     {' · '}{formatDate(c.created_at)}
                     {c.editado && <span className="ml-1 text-slate-400">(editado)</span>}
                   </div>
-                  {(c.autor_id === userId || perfil === 'admin') && (
+                  {(c.autor_id === userId || isPrivileged) && (
                     <div className="flex gap-1">
                       {c.autor_id === userId && editandoId !== c.id && (
                         <button type="button" onClick={() => { 

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import type { Prisma } from '@prisma/client'
 import { randomUUID } from 'crypto'
-import { authOptions } from '@/lib/auth'
+import { authOptions, isPrivilegedProfile } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { getAuditSession, registrarAuditoria } from '@/lib/audit'
 import {
@@ -45,7 +45,7 @@ export async function GET(request: Request) {
     const acao = searchParams.get('acao') || ''
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10))
     const limit = Math.max(1, Math.min(500, parseInt(searchParams.get('limit') || '100', 10)))
-    const isAdmin = (session.user as any)?.perfil === 'admin'
+    const isAdmin = isPrivilegedProfile((session.user as any)?.perfil)
 
     const where: Record<string, unknown> = {}
     if (status) where.status = status

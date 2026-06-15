@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { authOptions, isPrivilegedProfile } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { registrarAuditoria } from '@/lib/audit'
 
@@ -26,7 +26,7 @@ export async function PATCH(request: Request, { params }: Props) {
       include: { vinculos: true, arquivos: true, reacoes: true, topico: { select: { titulo: true } } },
     })
     if (!comentario) return NextResponse.json({ error: 'Não encontrado' }, { status: 404 })
-    if (comentario.autor_id !== userId && perfil !== 'admin') {
+    if (comentario.autor_id !== userId && !isPrivilegedProfile(perfil)) {
       return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
     }
 
@@ -87,7 +87,7 @@ export async function DELETE(_: Request, { params }: Props) {
       include: { vinculos: true, arquivos: true, reacoes: true, topico: { select: { titulo: true } } },
     })
     if (!comentario) return NextResponse.json({ error: 'Não encontrado' }, { status: 404 })
-    if (comentario.autor_id !== userId && perfil !== 'admin') {
+    if (comentario.autor_id !== userId && !isPrivilegedProfile(perfil)) {
       return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
     }
 

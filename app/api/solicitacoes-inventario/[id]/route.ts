@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import type { Prisma } from '@prisma/client'
 import { getServerSession } from 'next-auth'
 import { randomUUID } from 'crypto'
-import { authOptions } from '@/lib/auth'
+import { authOptions, isPrivilegedProfile } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { getAuditSession, registrarAuditoria } from '@/lib/audit'
 import {
@@ -53,9 +53,10 @@ export async function PATCH(request: Request, { params }: Props) {
 
     if (decisao === 'comentar' || decisao === 'comentario') {
       const sessionUserId = (session.user as any)?.id ?? null
-      const canComment = (session.user as any)?.perfil === 'admin' || solicitacao.solicitante_id === sessionUserId
+      const isReviewer = isPrivilegedProfile((session.user as any)?.perfil)
+      const canComment = isReviewer || solicitacao.solicitante_id === sessionUserId
       if (!canComment) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
-      const novoComentario = buildComentario(comentario, reviewer, (session.user as any)?.perfil === 'admin' ? 'revisor' : 'solicitante')
+      const novoComentario = buildComentario(comentario, reviewer, isReviewer ? 'revisor' : 'solicitante')
       if (!novoComentario) return NextResponse.json({ error: 'Comentário vazio' }, { status: 400 })
 
       const atualizada = await delegate.update({
@@ -68,7 +69,7 @@ export async function PATCH(request: Request, { params }: Props) {
       return NextResponse.json(sanitizeSolicitacaoInventarioResponse(atualizada))
     }
 
-    if ((session.user as any)?.perfil !== 'admin') {
+    if (!isPrivilegedProfile((session.user as any)?.perfil)) {
       return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
     }
     if (solicitacao.status !== 'pendente') {

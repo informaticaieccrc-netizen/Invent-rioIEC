@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { authOptions, isPrivilegedProfile } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { registrarAuditoria } from '@/lib/audit'
 import { sanitizeForumEtiquetas } from '@/lib/forum'
@@ -61,7 +61,7 @@ export async function PATCH(request: Request, { params }: Props) {
     const pastasAntes = await prisma.forum_topico_pastas.findMany({ where: { topico_id: id }, include: { pasta: true } })
 
     // Só autor ou admin pode editar título/conteúdo
-    const isAdmin  = perfil === 'admin'
+    const isAdmin  = isPrivilegedProfile(perfil)
     const isAutor  = topico.autor_id === userId
 
     const data: any = {}
@@ -183,7 +183,7 @@ export async function DELETE(_: Request, { params }: Props) {
       },
     })
     if (!topico) return NextResponse.json({ error: 'Não encontrado' }, { status: 404 })
-    if (topico.autor_id !== userId && perfil !== 'admin') {
+    if (topico.autor_id !== userId && !isPrivilegedProfile(perfil)) {
       return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
     }
 
