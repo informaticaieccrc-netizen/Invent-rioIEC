@@ -43,6 +43,9 @@ export async function GET(request: Request) {
     const where: any = {}
     if (status.length > 0) where.status = { in: status }
     if (plannerStatus.length > 0) where.planner_status = { in: plannerStatus }
+    if (status.length === 1 && status[0] === 'inconsistente' && plannerStatus.length === 0) {
+      where.planner_status = { not: 'concluido' }
+    }
     if (inicio || fim) {
       where.criado_em = {
         ...(inicio ? { gte: inicio } : {}),

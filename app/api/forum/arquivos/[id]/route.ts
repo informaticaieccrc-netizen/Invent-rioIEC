@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { authOptions, isPrivilegedProfile } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { deleteArquivo } from '@/lib/supabase-storage'
 import { registrarAuditoria } from '@/lib/audit'
@@ -20,7 +20,7 @@ export async function DELETE(_: Request, { params }: Props) {
 
     const arquivo = await prisma.forum_arquivos.findUnique({ where: { id } })
     if (!arquivo) return NextResponse.json({ error: 'Não encontrado' }, { status: 404 })
-    if (arquivo.usuario_id !== userId && perfil !== 'admin') {
+    if (arquivo.usuario_id !== userId && !isPrivilegedProfile(perfil)) {
       return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
     }
 

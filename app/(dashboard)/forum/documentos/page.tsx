@@ -66,7 +66,7 @@ export default function DocumentosPage() {
   const searchParams = useSearchParams()
   const pastaParam = searchParams.get('pasta')
   const perfil = (session?.user as any)?.perfil as string
-  const isAdmin = perfil === 'admin'
+  const isAdmin = perfil === 'admin' || perfil === 'dev'
   const confirmSolicitacao = useSolicitacaoInventarioConfirm()
 
   const [pastas, setPastas]         = useState<Pasta[]>([])

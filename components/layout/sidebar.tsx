@@ -103,7 +103,7 @@ export function Sidebar() {
 
   const perfil = session?.user?.perfil
   const canManageUsers = perfil === 'admin' || perfil === 'dev'
-  const isStrictAdmin = perfil === 'admin'
+  const isStrictAdmin = perfil === 'admin' || perfil === 'dev'
   const navGroupsFiltrados = navGroups
     .map(group => ({
       ...group,

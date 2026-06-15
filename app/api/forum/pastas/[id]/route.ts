@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { authOptions, isPrivilegedProfile } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { deleteArquivo } from '@/lib/supabase-storage'
 import { registrarAuditoria } from '@/lib/audit'
@@ -52,7 +52,7 @@ export async function DELETE(_: Request, { params }: Props) {
     if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
 
     const perfil = (session.user as any).perfil as string
-    if (perfil !== 'admin') return NextResponse.json({ error: 'Apenas admin' }, { status: 403 })
+    if (!isPrivilegedProfile(perfil)) return NextResponse.json({ error: 'Apenas admin/dev' }, { status: 403 })
 
     const { id } = await params
     const userId = (session.user as any).id as string

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import type { Prisma } from '@prisma/client'
 import { randomUUID } from 'crypto'
-import { authOptions } from '@/lib/auth'
+import { authOptions, isPrivilegedProfile } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { uploadArquivo } from '@/lib/supabase-storage'
 import { registrarAuditoria } from '@/lib/audit'
@@ -53,7 +53,7 @@ export async function POST(request: Request, { params }: Props) {
     const { id: pasta_id } = await params
     const userId   = (session.user as any).id as string
     const userName = session.user?.name ?? 'Usuário'
-    const isAdmin  = (session.user as any)?.perfil === 'admin'
+    const isAdmin  = isPrivilegedProfile((session.user as any)?.perfil)
 
     const pasta = await prisma.forum_pastas.findUnique({ where: { id: pasta_id } })
     if (!pasta) return NextResponse.json({ error: 'Pasta não encontrada' }, { status: 404 })

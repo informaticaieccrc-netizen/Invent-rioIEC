@@ -507,7 +507,7 @@ export default function PedidosPage() {
   const [chatOpen, setChatOpen] = useState(false)
   const [chatDraft, setChatDraft] = useState('')
 
-  const isAdmin = perfil === 'admin'
+  const isAdmin = perfil === 'admin' || perfil === 'dev'
   const canAccess = Boolean(perfil)
 
   function openPedido(pedido: Pedido) {

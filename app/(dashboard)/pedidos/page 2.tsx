@@ -82,7 +82,7 @@ export default function PedidosPage() {
   const [reviewing, setReviewing] = useState(false)
   const [parecer, setParecer] = useState('')
 
-  const isAdminOnly = perfil === 'admin'
+  const isAdminOnly = perfil === 'admin' || perfil === 'dev'
 
   async function load() {
     setLoading(true)

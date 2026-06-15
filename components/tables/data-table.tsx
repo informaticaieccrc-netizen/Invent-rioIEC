@@ -83,7 +83,7 @@ export function DataTable<T>({
 
       <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl overflow-hidden">
         {/* Table wrapper — horizontal scroll on small screens */}
-        <div className="overflow-x-auto">
+        <div className="crc-scrollbar overflow-x-auto bg-slate-50/40 dark:bg-slate-950/20">
           <table className="w-full text-sm min-w-[600px]">
             <thead>
               {table.getHeaderGroups().map((hg) => (

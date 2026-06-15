@@ -4,8 +4,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { type ColumnDef } from '@tanstack/react-table'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import { toast } from 'sonner'
 import {
   AlertTriangle,
+  CalendarDays,
   CheckCircle2,
   ChevronRight,
   Circle,
@@ -18,6 +20,9 @@ import {
   Rows3,
   ShieldAlert,
   SquareCode,
+  Upload,
+  UserPlus,
+  Wrench,
   X,
 } from 'lucide-react'
 import { DataTable } from '@/components/tables/data-table'
@@ -45,7 +50,10 @@ type SnowSolicitacao = {
   planner_pendentes?: number
   planner_em_atendimento?: number
   planner_concluidas?: number
+  planner_abertas?: number
   planner_resolvida?: boolean
+  total_operacional?: number
+  total_inconsistentes_abertas?: number
 }
 
 type SnowItem = {
@@ -106,10 +114,20 @@ type SnowItem = {
 
 type SnowDetalhe = SnowSolicitacao & { itens: SnowItem[] }
 
+type DevUsuario = {
+  id: string
+  nome: string
+  codigo_pessoa: string | null
+  email: string
+  perfil: string
+  ativo: boolean
+}
+
 type Overview = {
   total_solicitacoes: number
   total_itens: number
   atendidas: number
+  encontradas?: number
   nao_atendidas: number
   em_quarentena: number
   inconsistentes: number
@@ -160,6 +178,10 @@ const DATE_SCOPES: Array<{ value: DateScope; label: string }> = [
 ]
 
 const SNOW_MACHINE_ALERT_KEY = 'crc:snow-machine-alert'
+
+function totalEncontradasSolicitacao(item: SnowSolicitacao) {
+  return item.total_operacional ?? (item.total_atendidas + item.total_inconsistentes)
+}
 
 function formatLocalDateParam(date: Date) {
   const year = date.getFullYear()
@@ -313,7 +335,8 @@ function machineFilterLabel(filter: MachineFilter) {
 }
 
 export default function SnowPage() {
-  const { isAdmin } = usePermission()
+  const { isAdmin, perfil } = usePermission()
+  const showSnowDevTools = perfil === 'dev'
   const router = useRouter()
   const searchParams = useSearchParams()
   const reduceMotion = useReducedMotion()
@@ -355,6 +378,16 @@ export default function SnowPage() {
   const [quarantineInspect, setQuarantineInspect] = useState<SnowItem | null>(null)
   const [inconsistentInspect, setInconsistentInspect] = useState<SnowItem | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [devUsuarios, setDevUsuarios] = useState<DevUsuario[]>([])
+  const [devUsuarioId, setDevUsuarioId] = useState('')
+  const [devXlsxFile, setDevXlsxFile] = useState<File | null>(null)
+  const [devOrigemEmail, setDevOrigemEmail] = useState('smcgti.snow@pucminas.br')
+  const [devAssuntoEmail, setDevAssuntoEmail] = useState('')
+  const [devProcessing, setDevProcessing] = useState(false)
+  const [devCompleting, setDevCompleting] = useState<string | null>(null)
+  const [devAssigning, setDevAssigning] = useState<string | null>(null)
+  const [devPanelOpen, setDevPanelOpen] = useState(true)
   const closingInspectRef = useRef(false)
 
   const dateRange = useMemo(() => dateRangeForScope(dateScope), [dateScope])
@@ -363,7 +396,7 @@ export default function SnowPage() {
     if (machineFilter === 'em_atendimento') return { status: 'atendida,inconsistente', planner_status: 'assumido' }
     if (machineFilter === 'resolvidas') return { status: 'atendida,inconsistente', planner_status: 'concluido' }
     if (machineFilter === 'quarentena') return { status: 'em_quarentena' }
-    if (machineFilter === 'inconsistentes') return { status: 'inconsistente' }
+    if (machineFilter === 'inconsistentes') return { status: 'inconsistente', planner_status: 'pendente,assumido' }
     return { status: 'atendida,inconsistente', planner_status: 'pendente' }
   }, [machineFilter])
 
@@ -401,7 +434,7 @@ export default function SnowPage() {
     }
     loadOverview()
     return () => { cancelled = true }
-  }, [dateRange])
+  }, [dateRange, refreshKey])
 
   useEffect(() => {
     let cancelled = false
@@ -432,7 +465,7 @@ export default function SnowPage() {
     }
     loadData()
     return () => { cancelled = true }
-  }, [page, dateRange])
+  }, [page, dateRange, refreshKey])
 
   useEffect(() => {
     if (closingInspectRef.current) return
@@ -493,7 +526,7 @@ export default function SnowPage() {
     }
     loadMachineItems()
     return () => { cancelled = true }
-  }, [machinePage, dateRange, machineFilterQuery])
+  }, [machinePage, dateRange, machineFilterQuery, refreshKey])
 
   useEffect(() => {
     let cancelled = false
@@ -527,7 +560,29 @@ export default function SnowPage() {
 
     loadExportRows()
     return () => { cancelled = true }
-  }, [data, dateRange, machineFilterQuery, machineItems, viewMode])
+  }, [data, dateRange, machineFilterQuery, machineItems, refreshKey, viewMode])
+
+  useEffect(() => {
+    if (!showSnowDevTools) return
+    let cancelled = false
+    async function loadUsuarios() {
+      try {
+        const res = await fetch('/api/admin/usuarios')
+        const json = await res.json()
+        if (!cancelled) {
+          const usuarios = Array.isArray(json)
+            ? json.filter((usuario: DevUsuario) => usuario.ativo)
+            : []
+          setDevUsuarios(usuarios)
+          setDevUsuarioId(current => current || usuarios[0]?.id || '')
+        }
+      } catch (error) {
+        console.error('[snow dev usuarios]', error)
+      }
+    }
+    loadUsuarios()
+    return () => { cancelled = true }
+  }, [showSnowDevTools])
 
   useEffect(() => {
     const itemId = searchParams.get('item')
@@ -547,6 +602,155 @@ export default function SnowPage() {
       console.error('[snow detail]', error)
     } finally {
       setDetailLoading(false)
+    }
+  }
+
+  async function reloadSelected(solicitacaoId: string) {
+    const res = await fetch(`/api/snow/solicitacoes/${solicitacaoId}`)
+    if (!res.ok) return
+    const json = await res.json()
+    setSelected(json)
+  }
+
+  async function processDevXlsx() {
+    if (!devXlsxFile) {
+      toast.error('Selecione um arquivo .xlsx.')
+      return
+    }
+
+    setDevProcessing(true)
+    try {
+      const formData = new FormData()
+      formData.set('file', devXlsxFile)
+      formData.set('origem_email', devOrigemEmail)
+      if (devAssuntoEmail.trim()) formData.set('assunto_email', devAssuntoEmail.trim())
+
+      const res = await fetch('/api/snow/dev/processar-xlsx', {
+        method: 'POST',
+        body: formData,
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error || 'Erro ao processar XLSX.')
+
+      toast.success(`XLSX processado: ${(json?.itens?.length ?? json?.total_recebido ?? 0).toLocaleString('pt-BR')} registro(s).`)
+      setDevXlsxFile(null)
+      setDevAssuntoEmail('')
+      setRefreshKey(key => key + 1)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Erro ao processar XLSX.')
+    } finally {
+      setDevProcessing(false)
+    }
+  }
+
+  async function completeDevSnow(target: { itemId?: string; solicitacaoId?: string }) {
+    if (!devUsuarioId) {
+      toast.error('Selecione o usuário responsável.')
+      return
+    }
+
+    const completingKey = target.itemId ? `item:${target.itemId}` : `solicitacao:${target.solicitacaoId}`
+    setDevCompleting(completingKey)
+    try {
+      const res = await fetch('/api/snow/dev/concluir', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          item_id: target.itemId,
+          solicitacao_id: target.solicitacaoId,
+          usuario_id: devUsuarioId,
+        }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error || 'Erro ao concluir chamada SNOW.')
+
+      toast.success(`${(json.updated ?? 0).toLocaleString('pt-BR')} chamada(s) concluída(s).`)
+      setRefreshKey(key => key + 1)
+
+      if (target.itemId) {
+        setOperationalInspect(current => {
+          if (!current || current.id !== target.itemId) return current
+
+          return {
+            ...current,
+            planner_status: 'concluido',
+            atendente_nome: json.itens?.[0]?.atendente_nome ?? current.atendente_nome,
+            atendente_codigo_pessoa: json.itens?.[0]?.atendente_codigo_pessoa ?? current.atendente_codigo_pessoa,
+            concluido_em: json.itens?.[0]?.concluido_em ?? current.concluido_em,
+          }
+        })
+        setInconsistentInspect(current => {
+          if (!current || current.id !== target.itemId) return current
+
+          return {
+            ...current,
+            planner_status: 'concluido',
+            atendente_nome: json.itens?.[0]?.atendente_nome ?? current.atendente_nome,
+            atendente_codigo_pessoa: json.itens?.[0]?.atendente_codigo_pessoa ?? current.atendente_codigo_pessoa,
+            concluido_em: json.itens?.[0]?.concluido_em ?? current.concluido_em,
+          }
+        })
+      }
+
+      const selectedId = selected?.id
+      if (selectedId) await reloadSelected(selectedId)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Erro ao concluir chamada SNOW.')
+    } finally {
+      setDevCompleting(null)
+    }
+  }
+
+  async function assignDevSnowItem(itemId: string) {
+    if (!devUsuarioId) {
+      toast.error('Selecione o usuário responsável.')
+      return
+    }
+
+    setDevAssigning(itemId)
+    try {
+      const res = await fetch('/api/snow/dev/atribuir', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          item_id: itemId,
+          usuario_id: devUsuarioId,
+        }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error || 'Erro ao atribuir chamada SNOW.')
+
+      toast.success(`Chamada atribuída para ${json.atendente_nome ?? 'usuário'}.`)
+      setRefreshKey(key => key + 1)
+      setOperationalInspect(current => {
+        if (!current || current.id !== itemId) return current
+
+        return {
+          ...current,
+          planner_status: json.planner_status ?? 'assumido',
+          atendente_nome: json.atendente_nome ?? current.atendente_nome,
+          atendente_codigo_pessoa: json.atendente_codigo_pessoa ?? current.atendente_codigo_pessoa,
+          assumido_em: json.assumido_em ?? current.assumido_em,
+        }
+      })
+      setInconsistentInspect(current => {
+        if (!current || current.id !== itemId) return current
+
+        return {
+          ...current,
+          planner_status: json.planner_status ?? 'assumido',
+          atendente_nome: json.atendente_nome ?? current.atendente_nome,
+          atendente_codigo_pessoa: json.atendente_codigo_pessoa ?? current.atendente_codigo_pessoa,
+          assumido_em: json.assumido_em ?? current.assumido_em,
+        }
+      })
+
+      const selectedId = selected?.id
+      if (selectedId) await reloadSelected(selectedId)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Erro ao atribuir chamada SNOW.')
+    } finally {
+      setDevAssigning(null)
     }
   }
 
@@ -696,15 +900,16 @@ export default function SnowPage() {
       accessorKey: 'total_atendidas',
       header: 'Operacional',
       cell: ({ row }) => {
-        const encontradas = row.original.total_atendidas
         const concluidas = row.original.planner_concluidas ?? 0
-        const solicitacaoVerificada = encontradas - concluidas === 0
+        const abertas = row.original.planner_abertas ?? ((row.original.planner_pendentes ?? 0) + (row.original.planner_em_atendimento ?? 0))
+        const totalOperacional = totalEncontradasSolicitacao(row.original)
+        const solicitacaoConcluida = totalOperacional > 0 && abertas === 0
 
-        if (solicitacaoVerificada) {
+        if (solicitacaoConcluida) {
           return (
             <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-300">
               <MonitorCheck className="h-3.5 w-3.5" />
-              Solicitação verificada
+              Solicitação concluída
             </span>
           )
         }
@@ -713,7 +918,7 @@ export default function SnowPage() {
           <div className="flex flex-col gap-1">
             <span className="inline-flex items-center gap-1 text-xs text-slate-600 dark:text-slate-300">
               <CheckCircle2 className="h-3.5 w-3.5 text-blue-400" />
-              {encontradas.toLocaleString('pt-BR')} encontradas
+              {totalOperacional.toLocaleString('pt-BR')} encontradas
             </span>
             <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-300">
               <MonitorCheck className="h-3.5 w-3.5" />
@@ -736,13 +941,16 @@ export default function SnowPage() {
     {
       accessorKey: 'total_inconsistentes',
       header: 'Inconsistências',
-      cell: ({ row }) => row.original.total_inconsistentes > 0
+      cell: ({ row }) => {
+        const abertas = row.original.total_inconsistentes_abertas ?? row.original.total_inconsistentes
+        return abertas > 0
         ? (
           <span className="inline-flex rounded-md bg-rose-500/10 px-2 py-0.5 text-xs font-semibold text-rose-300">
-            {row.original.total_inconsistentes.toLocaleString('pt-BR')}
+            {abertas.toLocaleString('pt-BR')}
           </span>
         )
-        : <span className="text-slate-500">Sem inconsistência</span>,
+        : <span className="text-slate-500">Sem inconsistência aberta</span>
+      },
     },
     {
       accessorKey: 'status_processamento',
@@ -761,9 +969,10 @@ export default function SnowPage() {
     },
   ], [])
 
-  const totalComDesfecho = overview.atendidas + overview.nao_atendidas + overview.em_quarentena + overview.inconsistentes
+  const totalEncontradas = overview.encontradas ?? overview.atendidas
+  const totalComDesfecho = totalEncontradas + overview.nao_atendidas + overview.em_quarentena
   const taxaEncontradas = totalComDesfecho > 0
-    ? Math.round((overview.atendidas / totalComDesfecho) * 100)
+    ? Math.round((totalEncontradas / totalComDesfecho) * 100)
     : 0
   const selectedOperationalItems = selected?.itens.filter(isOperationalItem) ?? []
   const selectedPlannerConcluidas = selectedOperationalItems.filter(item => item.planner_status === 'concluido').length
@@ -782,10 +991,11 @@ export default function SnowPage() {
       { key: 'origem', header: 'Origem', value: item => item.origem_email },
       { key: 'tipo', header: 'Tipo', value: item => TIPO_LABELS[item.tipo_arquivo] ?? item.tipo_arquivo },
       { key: 'recebidos', header: 'Recebidos', value: item => item.total_recebido },
-      { key: 'encontradas', header: 'Encontradas', value: item => item.total_atendidas },
+      { key: 'encontradas', header: 'Encontradas', value: item => totalEncontradasSolicitacao(item) },
+      { key: 'encontradas_ok', header: 'Encontradas sem divergência', value: item => item.total_atendidas },
       { key: 'fora_inventario', header: 'Fora inventário', value: item => item.total_nao_atendidas },
       { key: 'quarentena', header: 'Quarentena', value: item => item.total_quarentena },
-      { key: 'inconsistencias', header: 'Inconsistências', value: item => item.total_inconsistentes },
+      { key: 'inconsistencias', header: 'Inconsistências abertas', value: item => item.total_inconsistentes_abertas ?? item.total_inconsistentes },
       { key: 'status', header: 'Status', value: item => STATUS_LABELS[item.status_processamento] ?? item.status_processamento },
       { key: 'erro', header: 'Erro', value: item => item.erro_processamento },
     ],
@@ -829,60 +1039,94 @@ export default function SnowPage() {
         />
 
         <section className="rounded-lg border border-slate-100 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(720px,auto)] xl:items-start">
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Visão operacional</p>
               <h2 className="mt-1 text-lg font-bold text-slate-900 dark:text-white">Entrada SNOW</h2>
-              <p className="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
+              <p className="mt-3 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
                 Solicitações processadas pelo Power Automate, cruzadas com o inventário oficial e acompanhadas por máquina.
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <OverviewExportMenu config={snowOverviewExportConfig} />
-              {isAdmin && (
-                <button
-                  type="button"
-                  onClick={() => router.push('/api/snow')}
-                  className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-semibold text-slate-600 transition hover:border-blue-300 hover:bg-white hover:text-blue-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:border-blue-500/60 dark:hover:bg-slate-900 dark:hover:text-blue-200"
-                  title="Abrir Swagger da API SNOW"
-                  aria-label="Abrir Swagger da API SNOW"
-                >
-                  <SquareCode className="h-4 w-4" />
-                  Swagger
-                </button>
-              )}
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-slate-800 dark:bg-slate-950">
-                {DATE_SCOPES.map(scope => (
+            <div className="flex min-w-0 flex-col gap-2 xl:items-end">
+              <div className="flex w-full flex-wrap items-center justify-start gap-2 xl:justify-end">
+                <div className="inline-flex shrink-0 rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-slate-800 dark:bg-slate-950">
                   <button
-                    key={scope.value}
-                    onClick={() => { setDateScope(scope.value); setPage(1); setMachinePage(1) }}
+                    type="button"
+                    onClick={() => setViewMode('solicitacoes')}
+                    title="Exibir solicitações"
+                    aria-label="Exibir solicitações"
                     className={cn(
-                      'h-8 rounded-md px-3 text-xs font-semibold transition',
-                      dateScope === scope.value
-                        ? 'bg-blue-600 text-white shadow-sm'
+                      'inline-flex h-10 w-10 items-center justify-center rounded-md transition',
+                      viewMode === 'solicitacoes'
+                        ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950'
                         : 'text-slate-500 hover:bg-white hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-white'
                     )}
                   >
-                    {scope.label}
+                    <FileSpreadsheet className="h-4 w-4" />
                   </button>
-                ))}
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-slate-800 dark:bg-slate-950">
-                <button
-                  onClick={() => setViewMode('solicitacoes')}
-                  className={cn('inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-semibold transition', viewMode === 'solicitacoes' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950' : 'text-slate-500 hover:bg-white hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-white')}
-                >
-                  <FileSpreadsheet className="h-3.5 w-3.5" />
-                  Solicitações
-                </button>
-                <button
-                  onClick={() => selectMachineFilter(machineFilter)}
-                  className={cn('inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-semibold transition', viewMode === 'maquinas' ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950' : 'text-slate-500 hover:bg-white hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-white')}
-                >
-                  <Laptop className="h-3.5 w-3.5" />
-                  Máquinas
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => selectMachineFilter(machineFilter)}
+                    title="Exibir máquinas"
+                    aria-label="Exibir máquinas"
+                    className={cn(
+                      'inline-flex h-10 w-10 items-center justify-center rounded-md transition',
+                      viewMode === 'maquinas'
+                        ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-950'
+                        : 'text-slate-500 hover:bg-white hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-white'
+                    )}
+                  >
+                    <Laptop className="h-4 w-4" />
+                  </button>
+                </div>
+                <OverviewExportMenu config={snowOverviewExportConfig} />
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => router.push('/api/snow')}
+                    className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-semibold text-slate-600 transition hover:border-blue-300 hover:bg-white hover:text-blue-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:border-blue-500/60 dark:hover:bg-slate-900 dark:hover:text-blue-200"
+                    title="Abrir Swagger da API SNOW"
+                    aria-label="Abrir Swagger da API SNOW"
+                  >
+                    <SquareCode className="h-4 w-4" />
+                    Swagger
+                  </button>
+                )}
+                {showSnowDevTools && (
+                  <button
+                    type="button"
+                    onClick={() => setDevPanelOpen(open => !open)}
+                    className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg border border-violet-300 bg-violet-50 px-3 text-xs font-semibold text-violet-700 transition hover:border-violet-400 hover:bg-violet-100 dark:border-violet-500/40 dark:bg-violet-500/10 dark:text-violet-200 dark:hover:bg-violet-500/20"
+                    title="Abrir ferramentas dev SNOW"
+                    aria-label="Abrir ferramentas dev SNOW"
+                  >
+                    <Wrench className="h-4 w-4" />
+                    Dev
+                  </button>
+                )}
+                <div className="flex min-w-[320px] flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-slate-800 dark:bg-slate-950 xl:max-w-[460px]">
+                  <span className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                    <CalendarDays className="h-3.5 w-3.5" />
+                    Período
+                  </span>
+                  <div className="grid min-w-0 flex-1 grid-cols-4 gap-1">
+                    {DATE_SCOPES.map(scope => (
+                      <button
+                        key={scope.value}
+                        onClick={() => { setDateScope(scope.value); setPage(1); setMachinePage(1) }}
+                        className={cn(
+                          'h-8 min-w-0 rounded-md px-2 text-xs font-semibold transition',
+                          dateScope === scope.value
+                            ? 'bg-blue-600 text-white shadow-sm'
+                            : 'text-slate-500 hover:bg-white hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-white'
+                        )}
+                      >
+                        <span className="truncate">{scope.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -943,6 +1187,56 @@ export default function SnowPage() {
               onClick={() => selectMachineFilter('inconsistentes')}
             />
           </div>
+
+          {showSnowDevTools && devPanelOpen && (
+            <div className="mt-4 rounded-lg border border-violet-300/50 bg-violet-50/70 p-3 dark:border-violet-500/25 dark:bg-violet-500/10">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="rounded-md bg-violet-500/10 p-1.5 text-violet-700 dark:text-violet-200">
+                    <Wrench className="h-4 w-4" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white">Ferramentas dev SNOW</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">POSTs internos para processamento manual e fechamento operacional.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-2 lg:grid-cols-[minmax(180px,1fr)_220px_minmax(180px,1fr)_auto]">
+                <label className="flex h-10 min-w-0 cursor-pointer items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-xs font-medium text-slate-600 transition hover:border-violet-400 dark:border-violet-500/30 dark:bg-slate-950 dark:text-slate-300">
+                  <Upload className="h-4 w-4 shrink-0 text-violet-500" />
+                  <span className="truncate">{devXlsxFile?.name || 'Selecionar arquivo .xlsx'}</span>
+                  <input
+                    type="file"
+                    accept=".xlsx"
+                    className="sr-only"
+                    onChange={event => setDevXlsxFile(event.target.files?.[0] ?? null)}
+                  />
+                </label>
+                <input
+                  value={devOrigemEmail}
+                  onChange={event => setDevOrigemEmail(event.target.value)}
+                  placeholder="Origem do e-mail"
+                  className="h-10 rounded-md border border-violet-200 bg-white px-3 text-xs font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-violet-400 dark:border-violet-500/30 dark:bg-slate-950 dark:text-slate-100"
+                />
+                <input
+                  value={devAssuntoEmail}
+                  onChange={event => setDevAssuntoEmail(event.target.value)}
+                  placeholder="Assunto opcional"
+                  className="h-10 rounded-md border border-violet-200 bg-white px-3 text-xs font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-violet-400 dark:border-violet-500/30 dark:bg-slate-950 dark:text-slate-100"
+                />
+                <button
+                  type="button"
+                  onClick={processDevXlsx}
+                  disabled={devProcessing || !devXlsxFile}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-violet-600 px-3 text-xs font-semibold text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {devProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                  Processar
+                </button>
+              </div>
+            </div>
+          )}
         </section>
 
         <AnimatePresence mode="wait" initial={false}>
@@ -1124,9 +1418,38 @@ export default function SnowPage() {
                 <h2 className="truncate text-xl font-bold text-slate-900 dark:text-white">{selected.nome_arquivo}</h2>
                 <p className="mt-1 text-sm text-slate-500">{TIPO_LABELS[selected.tipo_arquivo] ?? selected.tipo_arquivo}</p>
               </div>
-              <button onClick={closeDetail} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Fechar detalhe">
-                <X className="h-5 w-5" />
-              </button>
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                {showSnowDevTools && selectedOperationalItems.some(item => item.planner_status !== 'concluido') && (
+                  <>
+                    <select
+                      value={devUsuarioId}
+                      onChange={event => setDevUsuarioId(event.target.value)}
+                      className="h-9 max-w-[220px] rounded-lg border border-violet-300 bg-white px-2 text-xs font-semibold text-slate-800 outline-none transition focus:border-violet-500 dark:border-violet-500/40 dark:bg-slate-950 dark:text-slate-100"
+                      aria-label="Usuário responsável"
+                    >
+                      {devUsuarios.length === 0 ? (
+                        <option value="">Sem usuário</option>
+                      ) : devUsuarios.map(usuario => (
+                        <option key={usuario.id} value={usuario.id}>
+                          {usuario.nome}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => completeDevSnow({ solicitacaoId: selected.id })}
+                      disabled={devCompleting === `solicitacao:${selected.id}` || !devUsuarioId}
+                      className="inline-flex h-9 items-center gap-2 rounded-lg border border-violet-300 bg-violet-50 px-3 text-xs font-semibold text-violet-700 transition hover:border-violet-400 hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-violet-500/40 dark:bg-violet-500/10 dark:text-violet-200 dark:hover:bg-violet-500/20"
+                    >
+                      {devCompleting === `solicitacao:${selected.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <MonitorCheck className="h-4 w-4" />}
+                      Concluir solicitação
+                    </button>
+                  </>
+                )}
+                <button onClick={closeDetail} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Fechar detalhe">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
 
             <div className="grid gap-4 border-b border-slate-100 p-4 text-sm dark:border-slate-800 lg:grid-cols-[minmax(0,1.15fr)_180px_140px_minmax(360px,1fr)]">
@@ -1167,8 +1490,8 @@ export default function SnowPage() {
                   </span>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
-                  <span>{selected.total_atendidas} encontradas</span>
-                  <span>{selected.total_inconsistentes} inconsistentes</span>
+                  <span>{totalEncontradasSolicitacao(selected)} encontradas</span>
+                  <span>{selected.total_inconsistentes_abertas ?? selected.total_inconsistentes} inconsistentes abertas</span>
                   <span>{selected.total_quarentena} quarentena</span>
                   <span>{selected.total_nao_atendidas} fora</span>
                 </div>
@@ -1273,9 +1596,47 @@ export default function SnowPage() {
                   {operationalStatusLabel(operationalInspect)} no fluxo operacional do Planner.
                 </p>
               </div>
-              <button onClick={() => setOperationalInspect(null)} className="rounded-lg p-2 text-slate-500 hover:bg-white/70 dark:hover:bg-slate-900" aria-label="Fechar atendimento">
-                <X className="h-5 w-5" />
-              </button>
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                {showSnowDevTools && operationalInspect.planner_status !== 'concluido' && (
+                  <>
+                    <select
+                      value={devUsuarioId}
+                      onChange={event => setDevUsuarioId(event.target.value)}
+                      className="h-9 max-w-[200px] rounded-lg border border-violet-300 bg-white px-2 text-xs font-semibold text-slate-800 outline-none transition focus:border-violet-500 dark:border-violet-500/40 dark:bg-slate-950 dark:text-slate-100"
+                      aria-label="Usuário responsável"
+                    >
+                      {devUsuarios.length === 0 ? (
+                        <option value="">Sem usuário</option>
+                      ) : devUsuarios.map(usuario => (
+                        <option key={usuario.id} value={usuario.id}>
+                          {usuario.nome}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => assignDevSnowItem(operationalInspect.id)}
+                      disabled={devAssigning === operationalInspect.id || !devUsuarioId}
+                      className="inline-flex h-9 items-center gap-2 rounded-lg border border-cyan-300 bg-white px-3 text-xs font-semibold text-cyan-700 transition hover:border-cyan-400 hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-cyan-500/40 dark:bg-slate-950 dark:text-cyan-200 dark:hover:bg-cyan-500/10"
+                    >
+                      {devAssigning === operationalInspect.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
+                      Atribuir
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => completeDevSnow({ itemId: operationalInspect.id })}
+                      disabled={devCompleting === `item:${operationalInspect.id}` || !devUsuarioId}
+                      className="inline-flex h-9 items-center gap-2 rounded-lg border border-violet-300 bg-white px-3 text-xs font-semibold text-violet-700 transition hover:border-violet-400 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-violet-500/40 dark:bg-slate-950 dark:text-violet-200 dark:hover:bg-violet-500/10"
+                    >
+                      {devCompleting === `item:${operationalInspect.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <MonitorCheck className="h-4 w-4" />}
+                      Concluir
+                    </button>
+                  </>
+                )}
+                <button onClick={() => setOperationalInspect(null)} className="rounded-lg p-2 text-slate-500 hover:bg-white/70 dark:hover:bg-slate-900" aria-label="Fechar atendimento">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
 
             <div className="grid gap-3 border-b border-slate-100 p-4 text-sm dark:border-slate-800 md:grid-cols-3">
@@ -1491,9 +1852,47 @@ export default function SnowPage() {
                 <h2 className="mt-1 truncate text-xl font-bold text-slate-900 dark:text-white">{machineTitle(inconsistentInspect)}</h2>
                 <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{inconsistentInspect.motivo || 'IP ou hostname diverge do cadastro oficial do inventário.'}</p>
               </div>
-              <button onClick={() => setInconsistentInspect(null)} className="rounded-lg p-2 text-slate-500 hover:bg-white/70 dark:hover:bg-slate-900" aria-label="Fechar inconsistência">
-                <X className="h-5 w-5" />
-              </button>
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                {showSnowDevTools && inconsistentInspect.planner_status !== 'concluido' && (
+                  <>
+                    <select
+                      value={devUsuarioId}
+                      onChange={event => setDevUsuarioId(event.target.value)}
+                      className="h-9 max-w-[200px] rounded-lg border border-violet-300 bg-white px-2 text-xs font-semibold text-slate-800 outline-none transition focus:border-violet-500 dark:border-violet-500/40 dark:bg-slate-950 dark:text-slate-100"
+                      aria-label="Usuário responsável"
+                    >
+                      {devUsuarios.length === 0 ? (
+                        <option value="">Sem usuário</option>
+                      ) : devUsuarios.map(usuario => (
+                        <option key={usuario.id} value={usuario.id}>
+                          {usuario.nome}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => assignDevSnowItem(inconsistentInspect.id)}
+                      disabled={devAssigning === inconsistentInspect.id || !devUsuarioId}
+                      className="inline-flex h-9 items-center gap-2 rounded-lg border border-cyan-300 bg-white px-3 text-xs font-semibold text-cyan-700 transition hover:border-cyan-400 hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-cyan-500/40 dark:bg-slate-950 dark:text-cyan-200 dark:hover:bg-cyan-500/10"
+                    >
+                      {devAssigning === inconsistentInspect.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
+                      Atribuir
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => completeDevSnow({ itemId: inconsistentInspect.id })}
+                      disabled={devCompleting === `item:${inconsistentInspect.id}` || !devUsuarioId}
+                      className="inline-flex h-9 items-center gap-2 rounded-lg border border-violet-300 bg-white px-3 text-xs font-semibold text-violet-700 transition hover:border-violet-400 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-violet-500/40 dark:bg-slate-950 dark:text-violet-200 dark:hover:bg-violet-500/10"
+                    >
+                      {devCompleting === `item:${inconsistentInspect.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <MonitorCheck className="h-4 w-4" />}
+                      Concluir
+                    </button>
+                  </>
+                )}
+                <button onClick={() => setInconsistentInspect(null)} className="rounded-lg p-2 text-slate-500 hover:bg-white/70 dark:hover:bg-slate-900" aria-label="Fechar inconsistência">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
 
             <div className="grid gap-3 border-b border-slate-100 p-4 text-sm dark:border-slate-800 md:grid-cols-2">

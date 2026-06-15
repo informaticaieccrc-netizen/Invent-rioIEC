@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { authOptions, isPrivilegedProfile } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
 export const runtime = 'nodejs'
@@ -34,7 +34,7 @@ export async function GET(_: Request, { params }: Props) {
     if (!solicitacao) return NextResponse.json({ error: 'Solicitação não encontrada' }, { status: 404 })
 
     const userId = (session.user as any)?.id ?? null
-    const isAdmin = (session.user as any)?.perfil === 'admin'
+    const isAdmin = isPrivilegedProfile((session.user as any)?.perfil)
     if (!isAdmin && solicitacao.solicitante_id !== userId) {
       return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
     }
