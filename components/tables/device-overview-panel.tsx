@@ -531,10 +531,10 @@ function OverviewShell({
   accentClassName: string
   icon: ReactNode
   metrics: OverviewMetric[]
-  chartTitle: string
-  chartCenter: string
-  chartCaption: string
-  chartItems: PieChartItem[]
+  chartTitle?: string
+  chartCenter?: string
+  chartCaption?: string
+  chartItems?: PieChartItem[]
   listTitle?: string
   listItems?: OverviewListItem[]
   emptyMessage?: string
@@ -601,22 +601,24 @@ function OverviewShell({
             ))}
           </div>
 
-          <div className="grid gap-3 lg:grid-cols-[360px_minmax(0,1fr)]">
-            <div className="flex flex-col rounded-lg border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/40">
-              <SectionTitle icon={<MapPin className="h-3.5 w-3.5" />} label={chartTitle} />
-              <div className="mt-4 flex flex-1 items-center justify-center">
-                <div
-                  className="relative h-44 w-44 rounded-full"
-                  style={{ background: buildPieGradient(chartItems) }}
-                  aria-label={chartTitle}
-                >
-                  <div className="absolute inset-8 flex flex-col items-center justify-center rounded-full bg-white text-center dark:bg-slate-900">
-                    <span className="text-xl font-bold text-slate-900 dark:text-white">{chartCenter}</span>
-                    <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{chartCaption}</span>
+          <div className={cn('grid gap-3', chartItems?.length ? 'lg:grid-cols-[360px_minmax(0,1fr)]' : 'lg:grid-cols-1')}>
+            {chartItems?.length ? (
+              <div className="flex flex-col rounded-lg border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/40">
+                <SectionTitle icon={<MapPin className="h-3.5 w-3.5" />} label={chartTitle ?? 'Distribuição'} />
+                <div className="mt-4 flex flex-1 items-center justify-center">
+                  <div
+                    className="relative h-44 w-44 rounded-full"
+                    style={{ background: buildPieGradient(chartItems) }}
+                    aria-label={chartTitle ?? 'Distribuição'}
+                  >
+                    <div className="absolute inset-8 flex flex-col items-center justify-center rounded-full bg-white text-center dark:bg-slate-900">
+                      <span className="text-xl font-bold text-slate-900 dark:text-white">{chartCenter}</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{chartCaption}</span>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            ) : null}
 
             <div className="grid gap-3 xl:grid-cols-2">
               {sections.map((section) => (
@@ -1411,10 +1413,6 @@ export function AuditOverviewPanel({ total, items, activeFilters, isLoading = fa
         { icon: <CalendarClock className="h-3.5 w-3.5" />, label: 'Ultima edicao', value: latestLabel },
         { icon: <ShieldAlert className="h-3.5 w-3.5" />, label: 'Exclusoes', value: deletes.length.toLocaleString('pt-BR'), tone: deletes.length > 0 ? 'danger' : 'success', filter: { kind: 'audit-action', value: 'DELETE' } },
       ]}
-      chartTitle="Responsaveis"
-      chartCenter={users.length.toLocaleString('pt-BR')}
-      chartCaption="usuarios"
-      chartItems={users}
       listSections={[
         {
           title: 'Edicoes por responsavel',
