@@ -192,7 +192,13 @@ function isHiddenKey(key: string) {
   return hiddenObjectKeys.has(normalized) || normalized.endsWith('_id') || normalized.endsWith('_ids')
 }
 
-function formatValue(value: unknown, field?: string) {
+type FormattedObjectEntry = {
+  key: string
+  label: string
+  value: string
+}
+
+function formatValue(value: unknown, field?: string): string {
   const parsed = parseMaybeJson(value)
   if (parsed == null || parsed === '') return 'Não informado'
   if (typeof parsed === 'boolean') return parsed ? 'Sim' : 'Não'
@@ -206,7 +212,7 @@ function formatValue(value: unknown, field?: string) {
   return text
 }
 
-function objectEntries(value: unknown) {
+function objectEntries(value: unknown): FormattedObjectEntry[] {
   const parsed = parseMaybeJson(value)
   if (!isRecord(parsed)) return []
 

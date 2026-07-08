@@ -103,14 +103,19 @@ CREATE TABLE IF NOT EXISTS public.checklists_validacao_diffs (
 
 CREATE TABLE IF NOT EXISTS public.checklists_validacao_racks_respostas (
   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  checklist_validacao_solicitacao_id uuid NOT NULL UNIQUE REFERENCES public.checklists_validacao_solicitacoes(id) ON DELETE CASCADE,
-  rack_id uuid NOT NULL REFERENCES public.racks(id),
+  checklist_validacao_solicitacao_id uuid NOT NULL REFERENCES public.checklists_validacao_solicitacoes(id) ON DELETE CASCADE,
+  rack_id uuid NOT NULL,
   dados_informados_json jsonb,
   observacoes text,
-  preenchido_por uuid REFERENCES public.usuarios(id),
+  preenchido_por uuid,
   preenchido_em timestamptz,
   criado_em timestamptz DEFAULT now(),
-  atualizado_em timestamptz DEFAULT now()
+  atualizado_em timestamptz DEFAULT now(),
+  CONSTRAINT checklists_validacao_racks_respostas_checklist_validacao_so_key UNIQUE (checklist_validacao_solicitacao_id),
+  CONSTRAINT checklists_validacao_racks_respostas_rack_id_fkey
+    FOREIGN KEY (rack_id) REFERENCES public.racks(id) ON DELETE RESTRICT ON UPDATE NO ACTION,
+  CONSTRAINT checklists_validacao_racks_respostas_preenchido_por_fkey
+    FOREIGN KEY (preenchido_por) REFERENCES public.usuarios(id) ON DELETE SET NULL ON UPDATE NO ACTION
 );
 
 CREATE TABLE IF NOT EXISTS public.monitores (
@@ -122,26 +127,34 @@ CREATE TABLE IF NOT EXISTS public.monitores (
   modelo text,
   status text NOT NULL DEFAULT 'ativo',
   criado_via_checklist boolean NOT NULL DEFAULT false,
-  criado_por uuid REFERENCES public.usuarios(id),
+  criado_por uuid,
   criado_em timestamptz DEFAULT now(),
   atualizado_em timestamptz DEFAULT now(),
   checklist_ultima_id uuid,
   checklist_tecnico_id uuid,
   checklist_revisor_id uuid,
-  checklist_revisado_em timestamptz
+  checklist_revisado_em timestamptz,
+  CONSTRAINT monitores_criado_por_fkey
+    FOREIGN KEY (criado_por) REFERENCES public.usuarios(id) ON DELETE SET NULL ON UPDATE NO ACTION
 );
 
 CREATE TABLE IF NOT EXISTS public.alocacoes_monitores (
   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
   monitor_id uuid NOT NULL REFERENCES public.monitores(id) ON DELETE CASCADE,
-  maquina_id uuid REFERENCES public.maquinas(id),
-  setor_id uuid REFERENCES public.setores(id),
+  maquina_id uuid,
+  setor_id uuid,
   data_inicio date,
   data_fim date,
   ativo boolean NOT NULL DEFAULT true,
-  criado_por uuid REFERENCES public.usuarios(id),
+  criado_por uuid,
   criado_em timestamptz DEFAULT now(),
-  atualizado_em timestamptz DEFAULT now()
+  atualizado_em timestamptz DEFAULT now(),
+  CONSTRAINT alocacoes_monitores_maquina_id_fkey
+    FOREIGN KEY (maquina_id) REFERENCES public.maquinas(id) ON DELETE SET NULL ON UPDATE NO ACTION,
+  CONSTRAINT alocacoes_monitores_setor_id_fkey
+    FOREIGN KEY (setor_id) REFERENCES public.setores(id) ON DELETE SET NULL ON UPDATE NO ACTION,
+  CONSTRAINT alocacoes_monitores_criado_por_fkey
+    FOREIGN KEY (criado_por) REFERENCES public.usuarios(id) ON DELETE SET NULL ON UPDATE NO ACTION
 );
 
 CREATE INDEX IF NOT EXISTS idx_checklists_validacao_localidade ON public.checklists_validacao(localidade_id);
