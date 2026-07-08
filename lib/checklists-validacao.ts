@@ -360,6 +360,17 @@ type ChecklistMonitorAllocation = Record<string, unknown> & {
   maquina?: { id: string; nome_host: string | null } | null
 }
 
+type ChecklistItemRow = Record<string, unknown> & {
+  id: string
+  checklist_validacao_solicitacao_id: string
+  tipo_item: TipoItem
+  referencia_id: string | null
+  identificador_informado: string | null
+  dados_informados_json: Record<string, unknown> | null
+  status_revisao?: string | null
+  diffs?: Array<{ status_revisao: string }>
+}
+
 function pushAudit(audits: AuditEntry[], entry: AuditEntry) {
   audits.push(entry)
 }
@@ -566,7 +577,7 @@ export async function upsertChecklistItem(params: {
     const host = text(dados.hostname) ?? text(dados.nome_host)
     const patrimonio = text(dados.patrimonio)
     const normalize = (value: string | null | undefined) => String(value ?? '').trim().toLowerCase()
-    const existingItems = await delegate('checklists_validacao_itens').findMany({
+    const existingItems: ChecklistItemRow[] = await delegate('checklists_validacao_itens').findMany({
       where: {
         checklist_validacao_solicitacao_id: params.solicitacaoId,
         tipo_item: params.tipo_item,
@@ -663,7 +674,7 @@ export async function gerarDiffSolicitacao(solicitacaoId: string) {
   if (!solicitacao) throw new ChecklistError('Solicitação não encontrada', 404)
   if (solicitacao.tipo_solicitacao !== 'SETOR') throw new ChecklistError('Diff só é gerado para solicitação setorial')
 
-  const itens = await delegate('checklists_validacao_itens').findMany({ where: { checklist_validacao_solicitacao_id: solicitacaoId } })
+  const itens: ChecklistItemRow[] = await delegate('checklists_validacao_itens').findMany({ where: { checklist_validacao_solicitacao_id: solicitacaoId } })
   await delegate('checklists_validacao_diffs').deleteMany({ where: { checklist_validacao_solicitacao_id: solicitacaoId } })
 
   const created: any[] = []
@@ -692,12 +703,12 @@ export async function gerarDiffSolicitacao(solicitacaoId: string) {
 }
 
 export async function refreshItemReviewStatuses(solicitacaoId: string) {
-  const itens = await delegate('checklists_validacao_itens').findMany({
+  const itens: ChecklistItemRow[] = await delegate('checklists_validacao_itens').findMany({
     where: { checklist_validacao_solicitacao_id: solicitacaoId },
     include: { diffs: true },
   })
   for (const item of itens) {
-    const statuses = item.diffs.map((diff: any) => diff.status_revisao)
+    const statuses = (item.diffs ?? []).map(diff => diff.status_revisao)
     const reviewed = statuses.filter((status: string) => status === 'aprovado' || status === 'recusado')
     const status = statuses.length === 0
       ? item.status_revisao ?? 'pendente'
