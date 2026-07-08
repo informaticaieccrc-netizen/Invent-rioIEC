@@ -149,7 +149,7 @@ export async function PATCH(request: Request, { params }: Props) {
     await registrarAuditoria({
       tabela: 'checklists_validacao_solicitacoes',
       registro_id: id,
-      acao: 'COMENTAR',
+      acao: 'UPDATE',
       descricao: 'Comentário adicionado à solicitação de checklist',
       dados_anteriores: { comentarios: comentarios.slice(0, -1) },
       dados_novos: { comentario },
