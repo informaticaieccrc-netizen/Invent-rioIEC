@@ -4,27 +4,25 @@ import { useState } from 'react'
 import { signIn } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
 import { Loader2, Server } from 'lucide-react'
-import { AnimatePresence, motion } from 'motion/react'
 import { toast } from 'sonner'
 
-const schema = z.object({
-  email: z.string().email('E-mail inválido'),
-  senha: z.string().min(1, 'Senha obrigatória'),
-})
+type FormData = {
+  email: string
+  senha: string
+}
 
-type FormData = z.infer<typeof schema>
+type RequestFormData = {
+  nome: string
+  codigo_pessoa: string
+  email: string
+  senha: string
+}
 
-const requestSchema = z.object({
-  nome: z.string().min(2, 'Nome obrigatório'),
-  codigo_pessoa: z.string().min(1, 'Código obrigatório'),
-  email: z.string().email('E-mail inválido'),
-  senha: z.string().min(6, 'Mínimo 6 caracteres'),
-})
-
-type RequestFormData = z.infer<typeof requestSchema>
+const emailPattern = {
+  value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+  message: 'E-mail inválido',
+}
 
 export default function LoginPage() {
   const router = useRouter()
@@ -34,12 +32,8 @@ export default function LoginPage() {
   const [requestLoading, setRequestLoading] = useState(false)
   const [navigating, setNavigating] = useState(false)
 
-  const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
-    resolver: zodResolver(schema),
-  })
-  const requestForm = useForm<RequestFormData>({
-    resolver: zodResolver(requestSchema),
-  })
+  const { register, handleSubmit, formState: { errors } } = useForm<FormData>()
+  const requestForm = useForm<RequestFormData>()
 
   const onSubmit = async (data: FormData) => {
     setLoading(true)
@@ -89,31 +83,18 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
-      <AnimatePresence>
-        {navigating && (
-          <motion.div
-            key="login-loading"
-            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.18 }}
-          >
-            <motion.div
-              initial={{ opacity: 0, y: 10, scale: 0.96 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              className="flex flex-col items-center text-center"
-            >
+      {navigating && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950">
+          <div className="flex flex-col items-center text-center">
               <div className="mb-5 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-600 shadow-lg shadow-blue-950/40">
                 <Server className="h-8 w-8 text-white" />
               </div>
               <div className="h-8 w-8 rounded-full border-2 border-blue-400/30 border-t-blue-400 animate-spin" />
               <p className="mt-4 text-sm font-semibold text-white">Carregando plataforma</p>
               <p className="mt-1 text-xs text-slate-400">Preparando dashboard e permissões...</p>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          </div>
+        </div>
+      )}
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
@@ -143,14 +124,9 @@ export default function LoginPage() {
             </button>
           </div>
 
-          <AnimatePresence mode="wait" initial={false}>
           {mode === 'login' ? (
-          <motion.form
+          <form
             key="login-form"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.16 }}
             onSubmit={handleSubmit(onSubmit)}
             className="space-y-5"
           >
@@ -160,7 +136,10 @@ export default function LoginPage() {
                 E-mail
               </label>
               <input
-                {...register('email')}
+                {...register('email', {
+                  required: 'E-mail obrigatório',
+                  pattern: emailPattern,
+                })}
                 type="email"
                 placeholder="seu@email.com.br"
                 autoComplete="email"
@@ -174,7 +153,7 @@ export default function LoginPage() {
                 Senha
               </label>
               <input
-                {...register('senha')}
+                {...register('senha', { required: 'Senha obrigatória' })}
                 type="password"
                 placeholder="••••••••"
                 autoComplete="current-password"
@@ -197,36 +176,32 @@ export default function LoginPage() {
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}
               {loading ? 'Entrando...' : 'Entrar'}
             </button>
-          </motion.form>
+          </form>
           ) : (
-          <motion.form
+          <form
             key="request-form"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.16 }}
             onSubmit={requestForm.handleSubmit(onRequestSubmit)}
             className="space-y-4"
           >
             <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Solicitar criação de usuário</h2>
             <div>
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Nome completo</label>
-              <input {...requestForm.register('nome')} className="w-full px-4 py-2.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+              <input {...requestForm.register('nome', { required: 'Nome obrigatório', minLength: { value: 2, message: 'Nome obrigatório' } })} className="w-full px-4 py-2.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
               {requestForm.formState.errors.nome && <p className="text-red-500 text-xs mt-1">{requestForm.formState.errors.nome.message}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Código de pessoa</label>
-              <input {...requestForm.register('codigo_pessoa')} className="w-full px-4 py-2.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+              <input {...requestForm.register('codigo_pessoa', { required: 'Código obrigatório' })} className="w-full px-4 py-2.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
               {requestForm.formState.errors.codigo_pessoa && <p className="text-red-500 text-xs mt-1">{requestForm.formState.errors.codigo_pessoa.message}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">E-mail</label>
-              <input {...requestForm.register('email')} type="email" autoComplete="email" className="w-full px-4 py-2.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+              <input {...requestForm.register('email', { required: 'E-mail obrigatório', pattern: emailPattern })} type="email" autoComplete="email" className="w-full px-4 py-2.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
               {requestForm.formState.errors.email && <p className="text-red-500 text-xs mt-1">{requestForm.formState.errors.email.message}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Senha</label>
-              <input {...requestForm.register('senha')} type="password" autoComplete="new-password" className="w-full px-4 py-2.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+              <input {...requestForm.register('senha', { required: 'Senha obrigatória', minLength: { value: 6, message: 'Mínimo 6 caracteres' } })} type="password" autoComplete="new-password" className="w-full px-4 py-2.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
               {requestForm.formState.errors.senha && <p className="text-red-500 text-xs mt-1">{requestForm.formState.errors.senha.message}</p>}
             </div>
             <button
@@ -237,9 +212,8 @@ export default function LoginPage() {
               {requestLoading && <Loader2 className="w-4 h-4 animate-spin" />}
               {requestLoading ? 'Enviando...' : 'Enviar solicitação'}
             </button>
-          </motion.form>
+          </form>
           )}
-          </AnimatePresence>
 
           <p className="text-xs text-slate-400 text-center mt-6">
             Acesso restrito a colaboradores autorizados.

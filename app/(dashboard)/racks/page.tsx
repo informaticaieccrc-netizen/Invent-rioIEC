@@ -16,6 +16,7 @@ import {
 import type { OverviewExportConfig } from "@/components/tables/overview-export-menu";
 
 import { PageHeader } from "@/components/layout/page-header";
+import { INVENTORY_MOBILE_VIEWS, MobileSectionNav, type InventoryMobileView } from "@/components/layout/mobile-section-nav";
 import { ForumLinkedIndicator, useForumVinculosResumo } from "@/components/forum/forum-linked-indicator";
 import { RackModal } from "@/components/modals/rack-modal";
 import { CriarRackModal } from "@/components/modals/criar-rack-modal";
@@ -53,6 +54,7 @@ export default function RacksPage() {
 
   const [activeOverviewFilters, setActiveOverviewFilters] =
     useState<ActiveOverviewFilter[]>([]);
+  const [mobileView, setMobileView] = useState<InventoryMobileView>("registros");
 
   const [selected, setSelected] = useState<Rack | null>(null);
   const { openInspect, closeInspect } =
@@ -514,7 +516,7 @@ export default function RacksPage() {
   );
 
   return (
-    <div className="p-4 md:p-6 max-w-screen-2xl mx-auto">
+    <div className="mx-auto max-w-screen-2xl p-4 pb-28 md:p-6 md:pb-28 lg:pb-6">
       <PageHeader title="Racks" total={tableTotal}>
         {(isAdmin || canRequestInventoryChanges) && (
           <button
@@ -528,34 +530,44 @@ export default function RacksPage() {
         )}
       </PageHeader>
 
-      <RackOverviewPanel
-        total={overviewPanelTotal}
-        items={overviewPanelData}
-        activeFilters={activeOverviewFilters}
-        isLoading={overviewLoading}
-        onFilter={applyOverviewFilter}
-        exportConfig={overviewExportConfig}
-      />
+      <section className={mobileView === "overview" ? "block animate-in fade-in slide-in-from-bottom-2 duration-200 lg:block" : "hidden lg:block"}>
+        <RackOverviewPanel
+          total={overviewPanelTotal}
+          items={overviewPanelData}
+          activeFilters={activeOverviewFilters}
+          isLoading={overviewLoading}
+          onFilter={applyOverviewFilter}
+          exportConfig={overviewExportConfig}
+        />
+      </section>
 
-      <DataTable
-        columns={columns}
-        data={tableData}
-        total={tableTotal}
-        page={page}
-        totalPages={tableTotalPages}
-        onPageChange={setPage}
-        onRowClick={openInspect}
-        isLoading={
-          loading || overviewFilterLoading
-        }
-        filters={filters}
-        sort={sort}
-        dir={dir}
-        onSort={(field, newDir) => {
-          setSort(field);
-          setDir(newDir);
-          setPage(1);
-        }}
+      <section className={mobileView === "registros" ? "block animate-in fade-in slide-in-from-bottom-2 duration-200 lg:block" : "hidden lg:block"}>
+        <DataTable
+          columns={columns}
+          data={tableData}
+          total={tableTotal}
+          page={page}
+          totalPages={tableTotalPages}
+          onPageChange={setPage}
+          onRowClick={openInspect}
+          isLoading={
+            loading || overviewFilterLoading
+          }
+          filters={filters}
+          sort={sort}
+          dir={dir}
+          onSort={(field, newDir) => {
+            setSort(field);
+            setDir(newDir);
+            setPage(1);
+          }}
+        />
+      </section>
+
+      <MobileSectionNav
+        value={mobileView}
+        onViewChange={setMobileView}
+        views={INVENTORY_MOBILE_VIEWS}
       />
 
       <AnimatePresence initial={false}>

@@ -147,6 +147,7 @@ const FIELD_LABELS: Record<string, string> = {
   disponibilidade: 'Disponibilidade',
   data_inicio: 'Data de início',
   data_fim: 'Data de fim',
+  revisao: 'Última revisão',
   motivo_alocacao: 'Motivo',
   observacoes: 'Observações',
   tipo_uso: 'Tipo de uso',
@@ -212,6 +213,15 @@ function isRecord(value: unknown): value is JsonRecord {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
+function isUuid(value: unknown) {
+  return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(value.trim())
+}
+
+function firstDisplayString(...values: unknown[]) {
+  const found = values.find(value => value !== null && value !== undefined && String(value).trim() && !isUuid(String(value)))
+  return found ? String(found).trim() : ''
+}
+
 function relationLabel(source: JsonRecord, key: string) {
   const relationKey = key.replace(/_id$/, '')
   const labelKey = `${relationKey}_label`
@@ -247,6 +257,7 @@ function formatValue(value: unknown, key: string, source: JsonRecord) {
   if (key.endsWith('_id')) {
     const label = relationLabel(source, key)
     if (label) return label
+    if (isUuid(value)) return FIELD_LABELS[key] ? `${FIELD_LABELS[key]} vinculado` : 'Registro vinculado'
   }
   if (value === null || value === undefined || value === '') return '—'
   if (typeof value === 'boolean') return value ? 'Sim' : 'Não'
@@ -332,9 +343,30 @@ function diffRows(pedido: Pedido): DiffRow[] {
 function targetLabel(pedido: Pedido) {
   const previous = pedido.dados_anteriores ?? {}
   const next = pedido.dados_propostos ?? {}
+  const allocationResource = firstDisplayString(
+    next.maquina_label,
+    previous.maquina_label,
+    next.notebook_label,
+    previous.notebook_label,
+    next.aparelho_label,
+    previous.aparelho_label,
+    next.ramal_label,
+    previous.ramal_label,
+    next.impressora_label,
+    previous.impressora_label,
+    next.rack_label,
+    previous.rack_label,
+    next.monitor_label,
+    previous.monitor_label,
+  )
+  if (pedido.tipo_recurso.startsWith('alocacoes_')) {
+    return allocationResource || (RESOURCE_LABELS[pedido.tipo_recurso] ?? pedido.tipo_recurso)
+  }
+
   const candidates = [
     next.recurso_label,
     previous.recurso_label,
+    allocationResource,
     previous.endereco_ip,
     previous.nome_host,
     previous.nome,
@@ -354,8 +386,28 @@ function targetLabel(pedido: Pedido) {
     next.nome_original,
     next.pasta_nome,
   ]
-  const match = candidates.find(value => value !== null && value !== undefined && String(value).trim())
-  return match ? String(match) : RESOURCE_LABELS[pedido.tipo_recurso] ?? pedido.tipo_recurso
+  const match = firstDisplayString(...candidates)
+  return match || (RESOURCE_LABELS[pedido.tipo_recurso] ?? pedido.tipo_recurso)
+}
+
+function isTrocaAlocacao(pedido: Pedido) {
+  return pedido.acao === 'ALLOCATE' && Boolean(pedido.recurso_id) && pedido.tipo_recurso.startsWith('alocacoes_')
+}
+
+function pedidoActionLabel(pedido: Pedido) {
+  return isTrocaAlocacao(pedido) ? 'Troca' : ACTION_LABELS[pedido.acao] ?? pedido.acao
+}
+
+function trocaAlocacaoResumo(pedido: Pedido) {
+  const previous = pedido.dados_anteriores ?? {}
+  const next = pedido.dados_propostos ?? {}
+  const anterior = formatValue(previous.colaborador_id, 'colaborador_id', previous)
+  const novo = formatValue(next.colaborador_id, 'colaborador_id', next)
+  return {
+    anterior,
+    novo,
+    texto: `2 alterações: desalocar ${anterior} e alocar ${novo}`,
+  }
 }
 
 function requestSummary(pedido: Pedido) {
@@ -368,6 +420,10 @@ function requestSummary(pedido: Pedido) {
   }
   if (pedido.acao === 'DELETE') return `Excluir ${targetLabel(pedido)}`
   if (pedido.acao === 'DEALLOCATE') return `Encerrar vínculo de ${targetLabel(pedido)}`
+  if (isTrocaAlocacao(pedido)) {
+    const troca = trocaAlocacaoResumo(pedido)
+    return `Trocar vínculo em ${targetLabel(pedido)} · ${troca.texto}`
+  }
   if (rows.length === 0) return 'Sem mudanças estruturadas detectadas'
 
   return rows
@@ -460,8 +516,10 @@ function buildContextRows(pedido: Pedido) {
   return [
     ['Categoria', KIND_META[pedidoKind(pedido)].label],
     ['Recurso', targetLabel(pedido)],
-    ['Ação', ACTION_LABELS[pedido.acao] ?? pedido.acao],
+    ['Ação', pedidoActionLabel(pedido)],
+    isTrocaAlocacao(pedido) ? ['Alterações', '2 alterações: desalocação e alocação'] : null,
   ]
+    .filter((row): row is [string, string] => Array.isArray(row))
     .filter(([, value]) => value && value !== '—')
     .map(([label, value]) => ({ label, value }))
 }
@@ -515,7 +573,7 @@ export default function PedidosPage() {
     setSelected(pedido)
     writePendingInspectPreview(window.sessionStorage, href, {
       title: targetLabel(pedido),
-      subtitle: `${ACTION_LABELS[pedido.acao] ?? pedido.acao} · ${STATUS_META[pedido.status].label}`,
+      subtitle: `${pedidoActionLabel(pedido)} · ${STATUS_META[pedido.status].label}`,
     })
     router.push(href, { scroll: false })
   }
@@ -653,7 +711,7 @@ export default function PedidosPage() {
     columns: [
       { key: 'created_at', header: 'Criado em', value: pedido => pedido.created_at ? new Date(pedido.created_at).toLocaleString('pt-BR') : null },
       { key: 'tipo', header: 'Tipo', value: pedido => KIND_META[pedidoKind(pedido)].label },
-      { key: 'acao', header: 'Ação', value: pedido => ACTION_LABELS[pedido.acao] ?? pedido.acao },
+      { key: 'acao', header: 'Ação', value: pedido => pedidoActionLabel(pedido) },
       { key: 'status', header: 'Status', value: pedido => STATUS_META[pedido.status].label },
       { key: 'recurso', header: 'Recurso', value: pedido => RESOURCE_LABELS[pedido.tipo_recurso] ?? pedido.tipo_recurso },
       { key: 'solicitante', header: 'Solicitante', value: pedido => pedido.solicitante_nome },
@@ -885,7 +943,7 @@ export default function PedidosPage() {
                     <div className="mb-3 flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-300">
-                          {ACTION_LABELS[pedido.acao] ?? pedido.acao}
+                          {pedidoActionLabel(pedido)}
                         </p>
                         <h2 className="mt-1.5 truncate text-base font-bold text-white">{targetLabel(pedido)}</h2>
                         <p className="mt-0.5 text-xs text-slate-400">{RESOURCE_LABELS[pedido.tipo_recurso] ?? pedido.tipo_recurso}</p>
@@ -954,7 +1012,7 @@ export default function PedidosPage() {
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-300">Revisão de pedido</p>
                   <h2 className="mt-1.5 text-xl font-bold text-white">{targetLabel(selected)}</h2>
                   <p className="mt-1 text-xs text-slate-400">
-                    {ACTION_LABELS[selected.acao] ?? selected.acao} em {RESOURCE_LABELS[selected.tipo_recurso] ?? selected.tipo_recurso}
+                    {pedidoActionLabel(selected)} em {RESOURCE_LABELS[selected.tipo_recurso] ?? selected.tipo_recurso}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -1135,6 +1193,24 @@ export default function PedidosPage() {
               </AnimatePresence>
 
               <div className="space-y-3">
+                {isTrocaAlocacao(selected) && (() => {
+                  const troca = trocaAlocacaoResumo(selected)
+                  return (
+                    <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-3">
+                      <p className="mb-3 text-sm font-semibold text-white">Troca de alocação</p>
+                      <div className="grid gap-2 md:grid-cols-2">
+                        <div className="rounded-md bg-rose-500/10 p-2.5 text-sm text-rose-100">
+                          <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-rose-300">1. Desalocação</p>
+                          <p className="break-words text-sm font-semibold">{troca.anterior}</p>
+                        </div>
+                        <div className="rounded-md bg-emerald-500/10 p-2.5 text-sm text-emerald-100">
+                          <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-300">2. Alocação</p>
+                          <p className="break-words text-sm font-semibold">{troca.novo}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })()}
                 {diffRows(selected).map(row => {
                   const previous = selected.dados_anteriores ?? {}
                   const next = selected.dados_propostos ?? {}

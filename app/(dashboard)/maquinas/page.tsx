@@ -8,6 +8,7 @@ import { DataTable } from '@/components/tables/data-table'
 import { DeviceOverviewPanel, type OverviewFilter, notifyOverviewFilter } from '@/components/tables/device-overview-panel'
 import type { OverviewExportConfig } from '@/components/tables/overview-export-menu'
 import { PageHeader } from '@/components/layout/page-header'
+import { INVENTORY_MOBILE_VIEWS, MobileSectionNav, type InventoryMobileView } from '@/components/layout/mobile-section-nav'
 import { CategoriaBadge } from '@/components/dashboard/status-badge'
 import { ForumLinkedIndicator, useForumVinculosResumo } from '@/components/forum/forum-linked-indicator'
 import { MaquinaModal } from '@/components/modals/maquina-modal'
@@ -90,6 +91,7 @@ export default function MaquinasPage() {
   const { openInspect, closeInspect } = useInspectNavigation<Maquina>(setSelected)
   const [activeOverviewFilters, setActiveOverviewFilters] = useState<ActiveOverviewFilter[]>([])
   const [overviewFilterLoading, setOverviewFilterLoading] = useState(false)
+  const [mobileView, setMobileView] = useState<InventoryMobileView>('registros')
 
   // Filtros
   const [search, setSearch] = useState('')
@@ -455,7 +457,7 @@ export default function MaquinasPage() {
   )
 
   return (
-    <div className="p-4 md:p-6 max-w-screen-2xl mx-auto">
+    <div className="mx-auto max-w-screen-2xl p-4 pb-28 md:p-6 md:pb-28 lg:pb-6">
       <PageHeader title="Máquinas" total={total}>
         {(isAdmin || canRequestInventoryChanges) && (<button type="button" onClick={() => setShowCriar(true)}
           className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition">
@@ -463,30 +465,40 @@ export default function MaquinasPage() {
         </button>)}
       </PageHeader>
 
-      <DeviceOverviewPanel
-        title="Máquinas"
-        total={overviewPanelTotal}
-        items={overviewPanelData}
-        accentClassName="bg-blue-500"
-        activeFilters={activeOverviewFilters}
-        isLoading={overviewLoading}
-        onFilter={applyOverviewFilter}
-        exportConfig={overviewExportConfig}
-      />
+      <section className={mobileView === 'overview' ? 'block animate-in fade-in slide-in-from-bottom-2 duration-200 lg:block' : 'hidden lg:block'}>
+        <DeviceOverviewPanel
+          title="Máquinas"
+          total={overviewPanelTotal}
+          items={overviewPanelData}
+          accentClassName="bg-blue-500"
+          activeFilters={activeOverviewFilters}
+          isLoading={overviewLoading}
+          onFilter={applyOverviewFilter}
+          exportConfig={overviewExportConfig}
+        />
+      </section>
 
-      <DataTable
-        columns={columns}
-        data={tableData}
-        total={tableTotal}
-        page={page}
-        totalPages={tableTotalPages}
-        onPageChange={setPage}
-        onRowClick={openInspect}
-        isLoading={loading || overviewFilterLoading}
-        filters={filters}
-        sort={sort}
-        dir={dir}
-        onSort={(field, newDir) => { setSort(field); setDir(newDir); setPage(1) }}
+      <section className={mobileView === 'registros' ? 'block animate-in fade-in slide-in-from-bottom-2 duration-200 lg:block' : 'hidden lg:block'}>
+        <DataTable
+          columns={columns}
+          data={tableData}
+          total={tableTotal}
+          page={page}
+          totalPages={tableTotalPages}
+          onPageChange={setPage}
+          onRowClick={openInspect}
+          isLoading={loading || overviewFilterLoading}
+          filters={filters}
+          sort={sort}
+          dir={dir}
+          onSort={(field, newDir) => { setSort(field); setDir(newDir); setPage(1) }}
+        />
+      </section>
+
+      <MobileSectionNav
+        value={mobileView}
+        onViewChange={setMobileView}
+        views={INVENTORY_MOBILE_VIEWS}
       />
 
       <AnimatePresence initial={false}>

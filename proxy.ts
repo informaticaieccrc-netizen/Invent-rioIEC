@@ -1,11 +1,15 @@
-import { withAuth, type NextRequestWithAuth } from 'next-auth/middleware'
-import { NextResponse, type NextFetchEvent, type NextRequest } from 'next/server'
+import { getToken } from 'next-auth/jwt'
+import { NextResponse, type NextRequest } from 'next/server'
 
 const SNOW_EXTERNAL_PATHS = [
   /^\/api\/snow\/processar-xlsx$/,
   /^\/api\/snow\/itens\/[^/]+\/assumir$/,
   /^\/api\/snow\/itens\/[^/]+\/csc$/,
   /^\/api\/snow\/itens\/[^/]+\/concluir$/,
+]
+
+const CHECKLIST_EXTERNAL_PATHS = [
+  /^\/api\/checklist(?:\/.*)?$/,
 ]
 
 function hasSnowIntegrationToken(req: Request) {
@@ -19,18 +23,7 @@ function hasSnowIntegrationToken(req: Request) {
   return bearer === expected || apiKey === expected
 }
 
-const authMiddleware = withAuth({
-  pages: {
-    signIn: '/login',
-  },
-  callbacks: {
-    authorized: ({ token }) => {
-      return Boolean(token)
-    },
-  },
-})
-
-export default function middleware(req: NextRequest, event: NextFetchEvent) {
+export async function proxy(req: NextRequest) {
   const pathname = req.nextUrl.pathname
 
   if (SNOW_EXTERNAL_PATHS.some(pattern => pattern.test(pathname))) {
@@ -42,7 +35,24 @@ export default function middleware(req: NextRequest, event: NextFetchEvent) {
     )
   }
 
-  return authMiddleware(req as NextRequestWithAuth, event)
+  if (CHECKLIST_EXTERNAL_PATHS.some(pattern => pattern.test(pathname))) {
+    // /api/checklist serve o Swagger e os callbacks externos. Os handlers validam
+    // CHECKLIST_INTEGRATION_TOKEN e retornam 401 JSON, sem redirect para /login.
+    return NextResponse.next()
+  }
+
+  const token = await getToken({
+    req,
+    secret: process.env.NEXTAUTH_SECRET,
+  })
+
+  if (token) return NextResponse.next()
+
+  const loginUrl = req.nextUrl.clone()
+  loginUrl.pathname = '/login'
+  loginUrl.searchParams.set('callbackUrl', req.nextUrl.href)
+
+  return NextResponse.redirect(loginUrl)
 }
 
 export const config = {

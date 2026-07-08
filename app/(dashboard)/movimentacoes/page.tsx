@@ -11,6 +11,7 @@ import {
 } from '@/components/tables/device-overview-panel'
 import type { OverviewExportConfig } from '@/components/tables/overview-export-menu'
 import { PageHeader } from '@/components/layout/page-header'
+import { INVENTORY_MOBILE_VIEWS, MobileSectionNav, type InventoryMobileView } from '@/components/layout/mobile-section-nav'
 import { AuditLogModal } from '@/components/modals/audit-log-modal'
 import { useFetchData } from '@/hooks/use-fetch-data'
 import { Search } from 'lucide-react'
@@ -50,6 +51,7 @@ export default function MovimentacoesPage() {
     predicate: (item: AuditLog) => boolean
   } | null>(null)
   const [overviewFilterLoading, setOverviewFilterLoading] = useState(false)
+  const [mobileView, setMobileView] = useState<InventoryMobileView>('registros')
 
   const { data, total, totalPages, loading } = useFetchData<AuditLog>(
     'audit-log',
@@ -397,32 +399,42 @@ export default function MovimentacoesPage() {
   )
 
   return (
-    <div className="p-4 md:p-6 max-w-screen-2xl mx-auto">
+    <div className="mx-auto max-w-screen-2xl p-4 pb-28 md:p-6 md:pb-28 lg:pb-6">
       <PageHeader
         title="Log de Auditoria"
         description="Registro de todas as alterações realizadas no sistema"
         total={total}
       />
 
-      <AuditOverviewPanel
-        total={overviewPanelTotal}
-        items={overviewPanelData}
-        activeFilters={auditOverviewActiveFilters}
-        isLoading={overviewLoading}
-        onFilter={applyOverviewFilter}
-        exportConfig={overviewExportConfig}
-      />
+      <section className={mobileView === 'overview' ? 'block animate-in fade-in slide-in-from-bottom-2 duration-200 lg:block' : 'hidden lg:block'}>
+        <AuditOverviewPanel
+          total={overviewPanelTotal}
+          items={overviewPanelData}
+          activeFilters={auditOverviewActiveFilters}
+          isLoading={overviewLoading}
+          onFilter={applyOverviewFilter}
+          exportConfig={overviewExportConfig}
+        />
+      </section>
 
-      <DataTable
-        columns={columns}
-        data={tableData}
-        total={tableTotal}
-        page={page}
-        totalPages={tableTotalPages}
-        onPageChange={setPage}
-        onRowClick={openInspect}
-        isLoading={loading || overviewFilterLoading}
-        filters={filters}
+      <section className={mobileView === 'registros' ? 'block animate-in fade-in slide-in-from-bottom-2 duration-200 lg:block' : 'hidden lg:block'}>
+        <DataTable
+          columns={columns}
+          data={tableData}
+          total={tableTotal}
+          page={page}
+          totalPages={tableTotalPages}
+          onPageChange={setPage}
+          onRowClick={openInspect}
+          isLoading={loading || overviewFilterLoading}
+          filters={filters}
+        />
+      </section>
+
+      <MobileSectionNav
+        value={mobileView}
+        onViewChange={setMobileView}
+        views={INVENTORY_MOBILE_VIEWS}
       />
 
       <AnimatePresence initial={false}>

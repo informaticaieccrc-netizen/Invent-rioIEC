@@ -81,12 +81,8 @@ export const ORIGEM_SOLICITACAO_MAP: Record<number, string> = {
 }
 
 export const TIPO_APARELHO_MAP: Record<number, string> = {
-  1: 'Smartphone',
-  2: 'Tablet',
-  3: 'Roteador',
-  4: 'Switch',
-  5: 'Câmera',
-  6: 'Outro',
+  567000000: 'Fixo',
+  567000001: 'Móvel',
 }
 
 // Solicitações abertas = status != 4 (Concluído) e != 5 (Cancelado)

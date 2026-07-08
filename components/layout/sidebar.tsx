@@ -5,14 +5,16 @@ import { usePathname } from 'next/navigation'
 import { signOut, useSession } from 'next-auth/react'
 import { useState, useEffect, useRef, type MouseEvent as ReactMouseEvent } from 'react'
 import {
-  LayoutDashboard, Users, Monitor, Laptop, Smartphone, Printer,
+  LayoutDashboard, Users, Monitor, MonitorCheck, Laptop, Smartphone, Printer,
   Phone, Server, ScrollText, ChevronLeft,
   PanelLeftOpen, LogOut, Menu, X, UserCog, Loader2,
   ChevronDown,
   MessageSquare,
   FolderOpen,
   GitPullRequest,
-  FileSpreadsheet
+  FileSpreadsheet,
+  CalendarCheck,
+  ClipboardCheck
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -22,12 +24,14 @@ type NavItem = {
   icon: typeof LayoutDashboard
   adminOnly?: boolean
   adminStrict?: boolean
+  mobileHidden?: boolean
 }
 
 type NavGroup = {
   label: string
   icon: typeof LayoutDashboard
   items: NavItem[]
+  mobileHidden?: boolean
 }
 
 const primaryNavItem: NavItem = { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard }
@@ -38,6 +42,7 @@ const navGroups: NavGroup[] = [
     icon: Monitor,
     items: [
       { href: '/maquinas', label: 'Máquinas', icon: Monitor },
+      { href: '/monitores', label: 'Monitores', icon: MonitorCheck },
       { href: '/notebooks', label: 'Notebooks', icon: Laptop },
       { href: '/aparelhos', label: 'Aparelhos', icon: Smartphone },
       { href: '/ramais', label: 'Ramais', icon: Phone },
@@ -70,10 +75,19 @@ const navGroups: NavGroup[] = [
   {
     label: 'Serviços',
     icon: ScrollText,
+    mobileHidden: true,
     items: [
       { href: '/movimentacoes', label: 'Auditoria', icon: ScrollText },
       { href: '/pedidos', label: 'Pedidos', icon: GitPullRequest },
       { href: '/snow', label: 'Snow', icon: FileSpreadsheet },
+    ],
+  },
+  {
+    label: 'Checklists',
+    icon: CalendarCheck,
+    items: [
+      { href: '/checklists-validacao', label: 'Checklists', icon: CalendarCheck },
+      { href: '/checklists-validacao/revisao', label: 'Revisão', icon: ClipboardCheck, adminOnly: true, mobileHidden: true },
     ],
   },
 ]
@@ -83,6 +97,14 @@ function isNavItemActive(pathname: string, href: string) {
 
   if (href === '/forum') {
     return pathname === '/forum' || (pathname.startsWith('/forum/') && !pathname.startsWith('/forum/documentos'))
+  }
+
+  if (href === '/checklists-validacao/revisao') {
+    return pathname === href || /^\/checklists-validacao\/solicitacoes\/[^/]+\/revisao$/.test(pathname)
+  }
+
+  if (href === '/checklists-validacao') {
+    return pathname === href || /^\/checklists-validacao\/(?!revisao(?:\/|$))[^/]+$/.test(pathname) || /^\/checklists-validacao\/solicitacoes\/[^/]+$/.test(pathname)
   }
 
   return pathname === href || pathname.startsWith(`${href}/`)
@@ -160,6 +182,21 @@ export function Sidebar() {
     const timeout = window.setTimeout(() => setPendingHref(null), 8000)
     return () => window.clearTimeout(timeout)
   }, [pendingHref])
+
+  useEffect(() => {
+    if (mobileOpen) {
+      document.documentElement.dataset.inventoryMobileMenu = 'open'
+    } else {
+      delete document.documentElement.dataset.inventoryMobileMenu
+    }
+
+    window.dispatchEvent(new CustomEvent('inventory-mobile-menu-toggle', { detail: { open: mobileOpen } }))
+
+    return () => {
+      delete document.documentElement.dataset.inventoryMobileMenu
+      window.dispatchEvent(new CustomEvent('inventory-mobile-menu-toggle', { detail: { open: false } }))
+    }
+  }, [mobileOpen])
 
   useEffect(() => {
     if (previousPathnameRef.current === pathname) return
@@ -256,10 +293,15 @@ export function Sidebar() {
     )
   }
 
-  const renderNavGroups = (isCollapsed = false) => (
+  const renderNavGroups = (isCollapsed = false, options: { mobile?: boolean } = {}) => (
     <div className="space-y-1">
       {renderNavItem(primaryNavItem, { collapsed: isCollapsed })}
-      {navGroupsFiltrados.map((group, groupIndex) => (
+      {navGroupsFiltrados.map((group, groupIndex) => {
+        if (options.mobile && group.mobileHidden) return null
+        const items = options.mobile ? group.items.filter(item => !item.mobileHidden) : group.items
+        if (items.length === 0) return null
+
+        return (
         <div
           key={group.label}
           className={cn(
@@ -268,10 +310,10 @@ export function Sidebar() {
           )}
         >
           {(() => {
-            const groupActive = group.items.some(item => isNavItemActive(pathname, item.href))
-            const activeItem = group.items.find(item => isNavItemActive(pathname, item.href))
+            const groupActive = items.some(item => isNavItemActive(pathname, item.href))
+            const activeItem = items.find(item => isNavItemActive(pathname, item.href))
             const GroupIcon = activeItem?.icon ?? group.icon
-            const groupPending = group.items.some(item => pendingHref === item.href)
+            const groupPending = items.some(item => pendingHref === item.href)
             const expanded = openGroup === group.label
             const groupPedidosCount = group.label === 'Serviços' ? pendingPedidosCount : 0
             const groupSnowCount = group.label === 'Serviços' ? pendingSnowCount : 0
@@ -341,7 +383,7 @@ export function Sidebar() {
 
                 {!isCollapsed && expanded && (
                   <div className="mt-1 space-y-0.5 pl-2">
-                    {group.items.map(item => renderNavItem(item, { nested: true }))}
+                    {items.map(item => renderNavItem(item, { nested: true }))}
                   </div>
                 )}
 
@@ -356,7 +398,7 @@ export function Sidebar() {
                         {group.label}
                       </p>
                       <div className="space-y-0.5">
-                        {group.items.map(item => renderNavItem(item))}
+                        {items.map(item => renderNavItem(item))}
                       </div>
                     </div>
                   </div>
@@ -365,7 +407,8 @@ export function Sidebar() {
             )
           })()}
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 
@@ -483,7 +526,7 @@ export function Sidebar() {
           </button>
         </div>
         <nav className="flex-1 overflow-y-auto py-2 px-2">
-          {renderNavGroups()}
+          {renderNavGroups(false, { mobile: true })}
         </nav>
         <div className="border-t border-slate-700/50 p-3">
           <div className="flex items-center justify-between">

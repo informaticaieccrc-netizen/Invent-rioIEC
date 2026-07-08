@@ -27,6 +27,7 @@ export const TABELA_LABELS: Record<string, string> = {
   alocacoes_notebooks: 'Alocações de Notebooks',
   alocacoes_aparelhos: 'Alocações de Aparelhos',
   alocacoes_ramais: 'Alocações de Ramais',
+  alocacoes_monitores: 'Alocações de Monitores',
   usuarios: 'Usuários',
   solicitacoes_usuarios: 'Solicitações de Usuário',
   solicitacoes_inventario: 'Solicitações de Inventário',

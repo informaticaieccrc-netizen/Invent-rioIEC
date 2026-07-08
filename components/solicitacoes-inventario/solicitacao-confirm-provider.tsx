@@ -2,9 +2,7 @@
 
 import { createContext, useCallback, useContext, useState } from 'react'
 import { useSession } from 'next-auth/react'
-import { AnimatePresence } from 'motion/react'
 import { GitPullRequest, Loader2 } from 'lucide-react'
-import { AnimatedDialogFrame } from '@/components/layout/motion-primitives'
 
 type ConfirmState = {
   title?: string
@@ -49,14 +47,9 @@ export function SolicitacaoConfirmProvider({ children }: { children: React.React
   return (
     <SolicitacaoConfirmContext.Provider value={{ confirm, perfil }}>
       {children}
-      <AnimatePresence initial={false}>
-        {state && (
-          <AnimatedDialogFrame
-            key="solicitacao-inventario-confirm"
-            onClose={() => finish(false)}
-            zClassName="z-[70]"
-            className="max-w-md rounded-2xl border border-slate-700 bg-slate-950 p-6"
-          >
+      {state && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/70 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-950 p-6 shadow-2xl">
             <div className="flex items-start gap-4">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600/15 text-blue-300">
                 <GitPullRequest className="h-5 w-5" />
@@ -99,9 +92,9 @@ export function SolicitacaoConfirmProvider({ children }: { children: React.React
                 Confirmar solicitação
               </button>
             </div>
-          </AnimatedDialogFrame>
-        )}
-      </AnimatePresence>
+          </div>
+        </div>
+      )}
     </SolicitacaoConfirmContext.Provider>
   )
 }

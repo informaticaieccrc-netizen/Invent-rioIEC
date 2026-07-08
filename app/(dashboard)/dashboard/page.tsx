@@ -1,10 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import { StatsCards } from "@/components/dashboard/stats-cards";
 import { SectorOverview, type LocationOverviewScope, type SectorOverviewRow } from "@/components/dashboard/sector-overview";
-import { TrendingUp } from "lucide-react";
 import { UltimasAuditoriasCard } from "@/components/dashboard/last-audits";
 import { ExportPdfButton } from "@/components/dashboard/export-pdf-button";
 import { GlobalSearch } from '@/components/layout/global-search'
+import { DashboardMobileSections } from "@/components/dashboard/dashboard-mobile-sections";
 
 export const dynamic = "force-dynamic";
 
@@ -280,11 +280,11 @@ export default async function DashboardPage() {
  const { stats, setoresOverview, locationScopes } = await getDashboardData();
 
  return (
-  <div className="p-6 max-w-7xl mx-auto">
+  <div className="mx-auto max-w-7xl p-4 md:p-6">
    {/* Header */}
-   <div className="flex items-center gap-4 mb-5">
+   <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center">
   {/* Título — lado esquerdo */}
-  <div className="shrink-0">
+  <div className="min-w-0 shrink-0">
     <h1 className="text-xl font-bold text-slate-900 dark:text-white">
       Dashboard
     </h1>
@@ -293,26 +293,17 @@ export default async function DashboardPage() {
     </p>
   </div>
 
-  {/* Search — centro, cresce para preencher o espaço disponível */}
-  <GlobalSearch className="flex-1 min-w-0" />
-
-  {/* Ações — lado direito */}
-  <div className="flex items-center gap-2 shrink-0">
-    <div className="flex items-center gap-2 text-xs text-slate-400 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-lg px-3 py-1.5">
-      <TrendingUp className="w-3.5 h-3.5" />
-      Atualizado agora
-    </div>
+  <div className="flex w-full min-w-0 flex-col gap-3 sm:flex-row sm:items-center lg:flex-1">
+    <GlobalSearch className="w-full min-w-0 sm:flex-1" />
     <ExportPdfButton />
   </div>
 </div>
 
-   <SectorOverview setores={setoresOverview} locationScopes={locationScopes} />
-
-   {/* Stats */}
-   <StatsCards stats={stats} />
-
-   {/* Últimas Movimentações */}
-   <UltimasAuditoriasCard />
+   <DashboardMobileSections
+     overview={<SectorOverview setores={setoresOverview} locationScopes={locationScopes} />}
+     ativos={<StatsCards stats={stats} />}
+     auditoria={<UltimasAuditoriasCard />}
+   />
   </div>
  );
 }
