@@ -238,7 +238,7 @@ function fieldsFor(tipo: TipoItem) {
   ] as const
 }
 
-function isUuid(value: unknown) {
+function isUuid(value: unknown): value is string {
   return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 }
 
@@ -246,7 +246,7 @@ function stationRefFromData(data: Record<string, any>) {
   return text(data.estacao_ref) ?? text(data.hostname) ?? text(data.maquina_hostname) ?? text(data.patrimonio)
 }
 
-function splitIds(value: unknown) {
+function splitIds(value: unknown): string[] {
   if (Array.isArray(value)) return value.map(item => text(item)).filter(isUuid)
   return String(value ?? '')
     .split(',')
@@ -781,12 +781,13 @@ export async function assimilarSolicitacaoSetorial(solicitacaoId: string, user: 
 
       if (!assetId && itemDiffs.some(diff => diff.campo === '_item' && diff.tipo_diff === 'novo')) {
         createdAsset = await (tx as any)[table].create({ data: createPayloadForItem(tipo, data, solicitacao, user, now) })
-        assetId = createdAsset.id
-        applied.add(`${table}:${assetId}:create`)
-        await (tx as any).checklists_validacao_itens.update({ where: { id: item.id }, data: { referencia_id: assetId, atualizado_em: now } })
+        const createdAssetId = String(createdAsset.id)
+        assetId = createdAssetId
+        applied.add(`${table}:${createdAssetId}:create`)
+        await (tx as any).checklists_validacao_itens.update({ where: { id: item.id }, data: { referencia_id: createdAssetId, atualizado_em: now } })
         pushAudit(audits, {
           tabela: table,
-          registro_id: assetId,
+          registro_id: createdAssetId,
           acao: 'CREATE',
           descricao: `Ativo criado por checklist (${tipo})`,
           dados_novos: createdAsset,
