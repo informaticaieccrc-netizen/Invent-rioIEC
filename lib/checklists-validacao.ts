@@ -346,6 +346,20 @@ type AuditEntry = {
   dados_novos?: Record<string, unknown> | null
 }
 
+type ChecklistCollaboratorAllocation = Record<string, unknown> & {
+  id: string
+  colaborador_id: string | null
+  ativo: boolean
+  colaborador?: { id: string; nome: string | null } | null
+}
+
+type ChecklistMonitorAllocation = Record<string, unknown> & {
+  id: string
+  maquina_id: string | null
+  ativo: boolean
+  maquina?: { id: string; nome_host: string | null } | null
+}
+
 function pushAudit(audits: AuditEntry[], entry: AuditEntry) {
   audits.push(entry)
 }
@@ -362,7 +376,7 @@ async function reconcileMachineCollaborators(tx: any, params: {
   const explicitEmpty = String(data.colaboradores_estacao ?? '').toLowerCase().includes('sem colaborador')
   if (targetIds.length === 0 && !explicitEmpty) return
 
-  const current = await tx.alocacoes_maquinas.findMany({
+  const current: ChecklistCollaboratorAllocation[] = await tx.alocacoes_maquinas.findMany({
     where: { maquina_id: params.maquinaId, ativo: true },
     include: { colaborador: { select: { id: true, nome: true } } },
   })
@@ -415,7 +429,7 @@ async function reconcileRamalCollaborators(tx: any, params: {
   const targetSet = new Set(params.collaboratorIds)
   if (targetSet.size === 0 && !params.shouldApply) return
 
-  const current = await tx.alocacoes_ramais.findMany({
+  const current: ChecklistCollaboratorAllocation[] = await tx.alocacoes_ramais.findMany({
     where: { ramal_id: params.ramalId, ativo: true },
     include: { colaborador: { select: { id: true, nome: true } } },
   })
@@ -470,7 +484,7 @@ async function reconcileMonitorMachine(tx: any, params: {
   const maquinaId = params.maquinaId ?? text(data.maquina_id)
   if (!maquinaId) return
 
-  const current = await tx.alocacoes_monitores.findMany({
+  const current: ChecklistMonitorAllocation[] = await tx.alocacoes_monitores.findMany({
     where: { monitor_id: params.monitorId, ativo: true },
     include: { maquina: { select: { id: true, nome_host: true } } },
   })
