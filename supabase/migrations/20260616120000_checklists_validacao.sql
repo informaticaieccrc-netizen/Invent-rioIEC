@@ -76,14 +76,18 @@ CREATE TABLE IF NOT EXISTS public.checklists_validacao_itens (
   identificador_informado text,
   dados_informados_json jsonb,
   status_revisao text NOT NULL DEFAULT 'pendente',
-  preenchido_por uuid REFERENCES public.usuarios(id),
+  preenchido_por uuid,
   preenchido_em timestamptz,
-  revisado_por uuid REFERENCES public.usuarios(id),
+  revisado_por uuid,
   revisado_em timestamptz,
   criado_em timestamptz DEFAULT now(),
   atualizado_em timestamptz DEFAULT now(),
   CONSTRAINT check_checklist_item_tipo
-    CHECK (tipo_item IN ('MAQUINA', 'RAMAL', 'MONITOR', 'IMPRESSORA'))
+    CHECK (tipo_item IN ('MAQUINA', 'RAMAL', 'MONITOR', 'IMPRESSORA')),
+  CONSTRAINT checklists_validacao_itens_preenchido_por_fkey
+    FOREIGN KEY (preenchido_por) REFERENCES public.usuarios(id) ON DELETE SET NULL ON UPDATE NO ACTION,
+  CONSTRAINT checklists_validacao_itens_revisado_por_fkey
+    FOREIGN KEY (revisado_por) REFERENCES public.usuarios(id) ON DELETE SET NULL ON UPDATE NO ACTION
 );
 
 CREATE TABLE IF NOT EXISTS public.checklists_validacao_diffs (
