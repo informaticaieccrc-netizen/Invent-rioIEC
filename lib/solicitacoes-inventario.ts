@@ -378,19 +378,27 @@ async function registrarDesalocacoesPorInativacao(
 export async function assimilarTrocaAlocacaoPendente(params: {
   tipoRecurso: string
   acao: string
+  recursoId: string | null
+  dadosAnteriores: Record<string, unknown> | null
   dadosPropostos: Record<string, unknown>
   comentario: Record<string, unknown> | null
   usuarioId: string | null
 }) {
-  const assetId = allocationAssetId(params.tipoRecurso, params.dadosPropostos)
-  if (params.acao !== 'ALLOCATE' || !assetId || !SOLICITACAO_INVENTARIO_RECURSOS[params.tipoRecurso]?.alocacao) return null
+  const isAllocation = Boolean(SOLICITACAO_INVENTARIO_RECURSOS[params.tipoRecurso]?.alocacao)
+  if (!isAllocation || (params.acao !== 'ALLOCATE' && params.acao !== 'DEALLOCATE')) return null
+
+  const proposedAssetId = allocationAssetId(params.tipoRecurso, params.dadosPropostos)
+  const previousAssetId = allocationAssetId(params.tipoRecurso, params.dadosAnteriores)
+  const assetId = params.acao === 'ALLOCATE' ? proposedAssetId : previousAssetId
+  if (!assetId) return null
 
   const delegate = (prisma as any).solicitacoes_inventario as any
+  const complementaryAction = params.acao === 'ALLOCATE' ? 'DEALLOCATE' : 'ALLOCATE'
   const pendentes = await delegate.findMany({
     where: {
       status: 'pendente',
       tipo_recurso: params.tipoRecurso,
-      acao: 'DEALLOCATE',
+      acao: complementaryAction,
       solicitante_id: params.usuarioId,
     },
     orderBy: { created_at: 'desc' },
@@ -399,17 +407,35 @@ export async function assimilarTrocaAlocacaoPendente(params: {
 
   const troca = pendentes.find((pedido: SolicitacaoInventarioAplicavel) => {
     const anteriores = pedido.dados_anteriores ?? {}
-    return allocationAssetId(params.tipoRecurso, anteriores) === assetId
+    const propostos = pedido.dados_propostos ?? {}
+    const pedidoAssetId = pedido.acao === 'ALLOCATE'
+      ? allocationAssetId(params.tipoRecurso, propostos)
+      : allocationAssetId(params.tipoRecurso, anteriores)
+    return pedidoAssetId === assetId
   })
   if (!troca) return null
 
   const comentariosAtuais = Array.isArray((troca as any).comentarios) ? (troca as any).comentarios : []
   const comentarios = params.comentario ? [...comentariosAtuais, params.comentario] : comentariosAtuais
+  const dadosAnteriores = params.acao === 'DEALLOCATE'
+    ? params.dadosAnteriores
+    : troca.dados_anteriores
+  const dadosPropostos = params.acao === 'ALLOCATE'
+    ? params.dadosPropostos
+    : troca.dados_propostos
+  const recursoId = params.acao === 'DEALLOCATE'
+    ? params.recursoId
+    : troca.recurso_id
+
+  if (!dadosAnteriores || !dadosPropostos || !recursoId) return null
+
   return delegate.update({
     where: { id: troca.id },
     data: {
       acao: 'ALLOCATE',
-      dados_propostos: params.dadosPropostos as Prisma.InputJsonValue,
+      recurso_id: recursoId,
+      dados_anteriores: dadosAnteriores as Prisma.InputJsonValue,
+      dados_propostos: dadosPropostos as Prisma.InputJsonValue,
       comentarios: comentarios as Prisma.InputJsonValue,
       updated_at: new Date(),
     },

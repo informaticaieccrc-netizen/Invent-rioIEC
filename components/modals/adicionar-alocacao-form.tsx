@@ -1,8 +1,12 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { Loader2, Search, X, Plus, Monitor, Laptop, Smartphone, Phone, Check } from 'lucide-react'
 import { toast } from 'sonner'
+import { usePermission } from '@/hooks/use-permission'
+import { useSolicitacaoInventarioConfirm } from '@/components/solicitacoes-inventario/solicitacao-confirm-provider'
+import { writePendingInspectPreview } from '@/lib/navigation-context'
 
 type TipoItem = 'maquinas' | 'notebooks' | 'aparelhos' | 'ramais'
 
@@ -33,6 +37,9 @@ interface Props {
 }
 
 export function AdicionarAlocacaoForm({ colaboradorId, onSuccess }: Props) {
+  const router = useRouter()
+  const { isAdmin, canRequestInventoryChanges } = usePermission()
+  const confirmSolicitacao = useSolicitacaoInventarioConfirm()
   const [open, setOpen] = useState(false)
   const [tipo, setTipo] = useState<TipoItem>('maquinas')
   const [query, setQuery] = useState('')
@@ -46,6 +53,16 @@ export function AdicionarAlocacaoForm({ colaboradorId, onSuccess }: Props) {
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  function abrirPedidoCriado(pedido: { id?: string; acao?: string } | null) {
+    if (!pedido?.id) return
+    const href = `/pedidos?inspect=${pedido.id}`
+    writePendingInspectPreview(window.sessionStorage, href, {
+      title: selected?.label ?? 'Pedido de inventário',
+      subtitle: pedido.acao ? `Pedido ${pedido.acao}` : 'Pedido de inventário',
+    })
+    router.push(href)
+  }
 
   // Busca com debounce
   useEffect(() => {
@@ -83,13 +100,50 @@ export function AdicionarAlocacaoForm({ colaboradorId, onSuccess }: Props) {
     setSaving(true)
 
     const endpoint = ALOCACAO_ENDPOINTS[tipo]
-    const body: any = {
+    const body: Record<string, string | boolean> = {
       [endpoint.key]: selected.id,
       colaborador_id: colaboradorId,
     }
     if (tipo === 'ramais') body.whatsapp = whatsapp
 
     try {
+      if (!isAdmin) {
+        if (!canRequestInventoryChanges) {
+          throw new Error('Acesso negado. Apenas administradores e desenvolvimento podem realizar esta ação.')
+        }
+
+        const solicitacao = await confirmSolicitacao({
+          title: `Solicitar alocação de ${TIPO_OPTIONS.find(t => t.value === tipo)?.label}`,
+          description: 'Essa alocação será enviada para revisão antes de alterar o inventário.',
+        })
+        if (!solicitacao.confirmed) return
+
+        const res = await fetch('/api/solicitacoes-inventario', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tipo_recurso: `alocacoes_${tipo}`,
+            acao: 'ALLOCATE',
+            dados_propostos: body,
+            comentario: solicitacao.comentario,
+          }),
+        })
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}))
+          throw new Error(typeof err.error === 'string' ? err.error : 'Erro ao criar solicitação')
+        }
+
+        const pedido = await res.json().catch(() => null)
+        toast.success('Solicitação enviada para aprovação.')
+        setOpen(false)
+        setQuery('')
+        setSelected(null)
+        setWhatsapp(false)
+        onSuccess()
+        abrirPedidoCriado(pedido)
+        return
+      }
+
       const res = await fetch(endpoint.url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -105,8 +159,8 @@ export function AdicionarAlocacaoForm({ colaboradorId, onSuccess }: Props) {
       setSelected(null)
       setWhatsapp(false)
       onSuccess()
-    } catch (err: any) {
-      toast.error(err.message || 'Erro ao alocar. Tente novamente.')
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao alocar. Tente novamente.')
     } finally {
       setSaving(false)
     }
