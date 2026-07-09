@@ -25,27 +25,31 @@ ALTER TABLE public.racks
 CREATE TABLE IF NOT EXISTS public.checklists_validacao (
   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
   nome text NOT NULL,
-  localidade_id uuid NOT NULL REFERENCES public.localidades(id),
+  localidade_id uuid NOT NULL,
   incluir_racks boolean NOT NULL DEFAULT false,
   status text NOT NULL DEFAULT 'aberto',
   data_inicio date,
   data_fim date,
-  criado_por uuid REFERENCES public.usuarios(id),
+  criado_por uuid,
   criado_em timestamptz DEFAULT now(),
-  atualizado_em timestamptz DEFAULT now()
+  atualizado_em timestamptz DEFAULT now(),
+  CONSTRAINT checklists_validacao_localidade_id_fkey
+    FOREIGN KEY (localidade_id) REFERENCES public.localidades(id) ON DELETE RESTRICT ON UPDATE NO ACTION,
+  CONSTRAINT checklists_validacao_criado_por_fkey
+    FOREIGN KEY (criado_por) REFERENCES public.usuarios(id) ON DELETE SET NULL ON UPDATE NO ACTION
 );
 
 CREATE TABLE IF NOT EXISTS public.checklists_validacao_solicitacoes (
   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
   checklist_validacao_id uuid NOT NULL REFERENCES public.checklists_validacao(id) ON DELETE CASCADE,
   tipo_solicitacao text NOT NULL,
-  setor_id uuid REFERENCES public.setores(id),
-  rack_id uuid REFERENCES public.racks(id),
+  setor_id uuid,
+  rack_id uuid,
   status text NOT NULL DEFAULT 'aberta',
-  assumido_por uuid REFERENCES public.usuarios(id),
+  assumido_por uuid,
   assumido_em timestamptz,
   finalizado_em timestamptz,
-  revisado_por uuid REFERENCES public.usuarios(id),
+  revisado_por uuid,
   revisado_em timestamptz,
   status_revisao text NOT NULL DEFAULT 'pendente',
   planner_task_id text,
@@ -65,7 +69,15 @@ CREATE TABLE IF NOT EXISTS public.checklists_validacao_solicitacoes (
       (tipo_solicitacao = 'SETOR' AND setor_id IS NOT NULL AND rack_id IS NULL)
       OR
       (tipo_solicitacao = 'RACK' AND rack_id IS NOT NULL AND setor_id IS NULL)
-    )
+    ),
+  CONSTRAINT checklists_validacao_solicitacoes_setor_id_fkey
+    FOREIGN KEY (setor_id) REFERENCES public.setores(id) ON DELETE SET NULL ON UPDATE NO ACTION,
+  CONSTRAINT checklists_validacao_solicitacoes_rack_id_fkey
+    FOREIGN KEY (rack_id) REFERENCES public.racks(id) ON DELETE SET NULL ON UPDATE NO ACTION,
+  CONSTRAINT checklists_validacao_solicitacoes_assumido_por_fkey
+    FOREIGN KEY (assumido_por) REFERENCES public.usuarios(id) ON DELETE SET NULL ON UPDATE NO ACTION,
+  CONSTRAINT checklists_validacao_solicitacoes_revisado_por_fkey
+    FOREIGN KEY (revisado_por) REFERENCES public.usuarios(id) ON DELETE SET NULL ON UPDATE NO ACTION
 );
 
 CREATE TABLE IF NOT EXISTS public.checklists_validacao_itens (
@@ -107,7 +119,7 @@ CREATE TABLE IF NOT EXISTS public.checklists_validacao_diffs (
 
 CREATE TABLE IF NOT EXISTS public.checklists_validacao_racks_respostas (
   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  checklist_validacao_solicitacao_id uuid NOT NULL REFERENCES public.checklists_validacao_solicitacoes(id) ON DELETE CASCADE,
+  checklist_validacao_solicitacao_id uuid NOT NULL,
   rack_id uuid NOT NULL,
   dados_informados_json jsonb,
   observacoes text,
@@ -116,6 +128,8 @@ CREATE TABLE IF NOT EXISTS public.checklists_validacao_racks_respostas (
   criado_em timestamptz DEFAULT now(),
   atualizado_em timestamptz DEFAULT now(),
   CONSTRAINT checklists_validacao_racks_respostas_checklist_validacao_so_key UNIQUE (checklist_validacao_solicitacao_id),
+  CONSTRAINT checklists_validacao_racks_respostas_checklist_validacao_s_fkey
+    FOREIGN KEY (checklist_validacao_solicitacao_id) REFERENCES public.checklists_validacao_solicitacoes(id) ON DELETE CASCADE ON UPDATE NO ACTION,
   CONSTRAINT checklists_validacao_racks_respostas_rack_id_fkey
     FOREIGN KEY (rack_id) REFERENCES public.racks(id) ON DELETE RESTRICT ON UPDATE NO ACTION,
   CONSTRAINT checklists_validacao_racks_respostas_preenchido_por_fkey
