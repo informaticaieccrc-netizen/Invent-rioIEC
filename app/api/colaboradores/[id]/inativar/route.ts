@@ -1,21 +1,25 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions, requireAdmin } from '@/lib/auth'
+import { requireAdmin } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { registrarAuditoria, getAuditSession } from '@/lib/audit'
 
 export const runtime = 'nodejs'
 type Props = { params: Promise<{ id: string }> }
 
+function labelAtivo(prefixo: string, label: string | null | undefined) {
+  return `${prefixo} ${label?.trim() || 'sem identificação'}`
+}
+
 export async function POST(_: Request, { params }: Props) {
   const denied = await requireAdmin()
   if (denied) return denied
 
-  const { id } = await params
-  const { usuario_id, usuario_nome } = await getAuditSession()
+  try {
+    const { id } = await params
+    const { usuario_id, usuario_nome } = await getAuditSession()
 
-  const colaborador = await prisma.colaboradores.findUnique({ where: { id } })
-  if (!colaborador) return NextResponse.json({ error: 'Não encontrado' }, { status: 404 })
+    const colaborador = await prisma.colaboradores.findUnique({ where: { id } })
+    if (!colaborador) return NextResponse.json({ error: 'Não encontrado' }, { status: 404 })
 
   // Buscar todas as alocações ativas antes de desativar
   const [maquinas, notebooks, aparelhos, ramais] = await Promise.all([
@@ -67,10 +71,10 @@ export async function POST(_: Request, { params }: Props) {
 
   // Montar labels descritivos para o log
   const labelsDesalocados: string[] = [
-    ...maquinas.map(a => `Máquina ${a.maquina?.endereco_ip ?? a.maquina?.nome_host ?? a.id}`),
-    ...notebooks.map(a => `Notebook ${a.notebook?.numero_patrimonio ?? a.id}`),
-    ...aparelhos.map(a => `Aparelho ${a.aparelho?.modelo ?? a.id}`),
-    ...ramais.map(a => `Ramal ${a.ramal?.numero_ramal ?? a.id}`),
+    ...maquinas.map(a => labelAtivo('Máquina', a.maquina?.endereco_ip ?? a.maquina?.nome_host)),
+    ...notebooks.map(a => labelAtivo('Notebook', a.notebook?.numero_patrimonio)),
+    ...aparelhos.map(a => labelAtivo('Aparelho', a.aparelho?.modelo)),
+    ...ramais.map(a => labelAtivo('Ramal', a.ramal?.numero_ramal)),
   ]
 
   const totalAlocacoes = labelsDesalocados.length
@@ -89,6 +93,109 @@ export async function POST(_: Request, { params }: Props) {
 
   // Registro 2: desalocações em massa (apenas se havia alocações)
   if (totalAlocacoes > 0) {
+    await Promise.all([
+      ...maquinas.map(a => registrarAuditoria({
+        tabela: 'alocacoes_maquinas',
+        registro_id: a.maquina_id ?? a.id,
+        acao: 'DESALOCAR' as const,
+        descricao: `${labelAtivo('Máquina', a.maquina?.endereco_ip ?? a.maquina?.nome_host)} desalocada automaticamente ao inativar ${colaborador.nome}`,
+        dados_anteriores: {
+          alocacao_id: a.id,
+          maquina_id: a.maquina_id,
+          maquina_label: a.maquina?.endereco_ip ?? a.maquina?.nome_host ?? null,
+          colaborador_id: id,
+          colaborador_nome: colaborador.nome,
+          data_inicio: a.data_inicio,
+          ativo: true,
+        },
+        dados_novos: {
+          alocacao_id: a.id,
+          maquina_id: a.maquina_id,
+          colaborador_id: id,
+          colaborador_nome: colaborador.nome,
+          data_fim: agora,
+          ativo: false,
+        },
+        usuario_id,
+        usuario_nome,
+      })),
+      ...notebooks.map(a => registrarAuditoria({
+        tabela: 'alocacoes_notebooks',
+        registro_id: a.notebook_id ?? a.id,
+        acao: 'DESALOCAR' as const,
+        descricao: `${labelAtivo('Notebook', a.notebook?.numero_patrimonio)} desalocado automaticamente ao inativar ${colaborador.nome}`,
+        dados_anteriores: {
+          alocacao_id: a.id,
+          notebook_id: a.notebook_id,
+          notebook_label: a.notebook?.numero_patrimonio ?? null,
+          colaborador_id: id,
+          colaborador_nome: colaborador.nome,
+          data_inicio: a.data_inicio,
+          ativo: true,
+        },
+        dados_novos: {
+          alocacao_id: a.id,
+          notebook_id: a.notebook_id,
+          colaborador_id: id,
+          colaborador_nome: colaborador.nome,
+          data_fim: agora,
+          ativo: false,
+        },
+        usuario_id,
+        usuario_nome,
+      })),
+      ...aparelhos.map(a => registrarAuditoria({
+        tabela: 'alocacoes_aparelhos',
+        registro_id: a.aparelho_id ?? a.id,
+        acao: 'DESALOCAR' as const,
+        descricao: `${labelAtivo('Aparelho', a.aparelho?.modelo)} desalocado automaticamente ao inativar ${colaborador.nome}`,
+        dados_anteriores: {
+          alocacao_id: a.id,
+          aparelho_id: a.aparelho_id,
+          aparelho_label: a.aparelho?.modelo ?? null,
+          colaborador_id: id,
+          colaborador_nome: colaborador.nome,
+          data_inicio: a.data_inicio,
+          ativo: true,
+        },
+        dados_novos: {
+          alocacao_id: a.id,
+          aparelho_id: a.aparelho_id,
+          colaborador_id: id,
+          colaborador_nome: colaborador.nome,
+          data_fim: agora,
+          ativo: false,
+        },
+        usuario_id,
+        usuario_nome,
+      })),
+      ...ramais.map(a => registrarAuditoria({
+        tabela: 'alocacoes_ramais',
+        registro_id: a.ramal_id ?? a.id,
+        acao: 'DESALOCAR' as const,
+        descricao: `${labelAtivo('Ramal', a.ramal?.numero_ramal)} desalocado automaticamente ao inativar ${colaborador.nome}`,
+        dados_anteriores: {
+          alocacao_id: a.id,
+          ramal_id: a.ramal_id,
+          ramal_label: a.ramal?.numero_ramal ?? null,
+          colaborador_id: id,
+          colaborador_nome: colaborador.nome,
+          data_inicio: a.data_inicio,
+          ativo: true,
+        },
+        dados_novos: {
+          alocacao_id: a.id,
+          ramal_id: a.ramal_id,
+          colaborador_id: id,
+          colaborador_nome: colaborador.nome,
+          data_fim: agora,
+          ativo: false,
+        },
+        usuario_id,
+        usuario_nome,
+      })),
+    ])
+
     await registrarAuditoria({
       tabela: 'colaboradores',
       registro_id: id,
@@ -106,9 +213,16 @@ export async function POST(_: Request, { params }: Props) {
     })
   }
 
-  return NextResponse.json({
-    ok: true,
-    totalDesalocados: totalAlocacoes,
-    desalocados: labelsDesalocados,
-  })
+    return NextResponse.json({
+      ok: true,
+      totalDesalocados: totalAlocacoes,
+      desalocados: labelsDesalocados,
+    })
+  } catch (error) {
+    console.error('[POST /api/colaboradores/[id]/inativar]', error)
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Erro ao inativar colaborador' },
+      { status: 500 },
+    )
+  }
 }

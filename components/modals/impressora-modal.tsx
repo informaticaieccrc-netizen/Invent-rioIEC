@@ -27,11 +27,19 @@ const schema = z.object({
   andar: z.string().optional().nullable(),
   servidor_impressao: z.string().optional().nullable(),
   tipo_usuario: z.string().optional().nullable(),
+  revisao: z.string().optional().nullable(),
   status: z.boolean().optional().nullable(),
 })
 type FormData = z.infer<typeof schema>
 
 interface Props { impressora: Impressora; onClose: () => void; onRefresh: () => void }
+
+function toDateInputValue(value?: string | null) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toISOString().slice(0, 10)
+}
 
 export function ImpressoraModal({ impressora, onClose, onRefresh }: Props) {
   const { isAdmin, canRequestInventoryChanges } = usePermission()
@@ -61,12 +69,22 @@ export function ImpressoraModal({ impressora, onClose, onRefresh }: Props) {
       andar: impressora.andar,
       servidor_impressao: impressora.servidor_impressao,
       tipo_usuario: impressora.tipo_usuario,
+      revisao: toDateInputValue(impressora.revisao),
       status: impressora.status,
     },
   })
 
   function onSubmit(data: FormData) {
-  update(impressora.id, { ...data, setor_id: setorId, localidade_id: localidadeId }, {
+  const currentRevision = toDateInputValue(impressora.revisao)
+  const { revisao, ...baseData } = data
+  const payload = {
+    ...baseData,
+    ...(revisao !== currentRevision ? { revisao: revisao || null } : {}),
+    setor_id: setorId,
+    localidade_id: localidadeId,
+  }
+
+  update(impressora.id, payload, {
     previousData: impressora,
     label: `Impressora "${impressora.nome_host ?? impressora.modelo }" atualizada`,
   })
@@ -151,6 +169,7 @@ export function ImpressoraModal({ impressora, onClose, onRefresh }: Props) {
                   </div>
                   <div><label className={lbl}>Andar</label><input {...register('andar')} className={inp} /></div>
                   <div><label className={lbl}>Tipo de Usuário</label><input {...register('tipo_usuario')} className={inp} /></div>
+                  <div><label className={lbl}>Última revisão</label><input type="date" {...register('revisao')} className={inp} /></div>
                   <div className="flex items-center gap-2 pt-4">
                     <input type="checkbox" id="imp-status" {...register('status')}
                       className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />

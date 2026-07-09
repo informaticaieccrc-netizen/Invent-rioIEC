@@ -12,6 +12,7 @@ import {
 } from "@/components/tables/device-overview-panel";
 import type { OverviewExportConfig } from "@/components/tables/overview-export-menu";
 import { PageHeader } from "@/components/layout/page-header";
+import { INVENTORY_MOBILE_VIEWS, MobileSectionNav, type InventoryMobileView } from "@/components/layout/mobile-section-nav";
 import { BoolBadge } from "@/components/dashboard/status-badge";
 import { ForumLinkedIndicator, useForumVinculosResumo } from "@/components/forum/forum-linked-indicator";
 import { AparelhoModal } from "@/components/modals/aparelho-modal";
@@ -187,6 +188,7 @@ export default function AparelhosPage() {
 
   const [overviewFilterLoading, setOverviewFilterLoading] =
     useState(false);
+  const [mobileView, setMobileView] = useState<InventoryMobileView>("registros");
 
   // Filtros
   const [search, setSearch] = useState("");
@@ -359,7 +361,7 @@ export default function AparelhosPage() {
     activeFilters: activeOverviewFilters,
     columns: [
       { key: "modelo", header: "Modelo", value: item => item.modelo },
-      { key: "tipo", header: "Tipo", value: item => item.tipo },
+      { key: "tipo", header: "Tipo", value: item => mapTipoAparelho(item.tipo) },
       { key: "ip", header: "IP", value: item => item.endereco_ip },
       { key: "mac", header: "MAC", value: item => item.endereco_mac },
       { key: "setor", header: "Setor", value: item => getAparelhoSetor(item) },
@@ -372,7 +374,7 @@ export default function AparelhosPage() {
     ],
     pdfColumns: [
       { key: "modelo", header: "Modelo", value: item => item.modelo },
-      { key: "tipo", header: "Tipo", value: item => item.tipo },
+      { key: "tipo", header: "Tipo", value: item => mapTipoAparelho(item.tipo) },
       { key: "ip", header: "IP", value: item => item.endereco_ip },
       { key: "setor", header: "Setor", value: item => getAparelhoSetor(item) },
       { key: "localidade", header: "Localidade", value: item => item.localidade_nome },
@@ -758,7 +760,7 @@ export default function AparelhosPage() {
   );
 
   return (
-    <div className="p-4 md:p-6 max-w-screen-2xl mx-auto">
+    <div className="mx-auto max-w-screen-2xl p-4 pb-28 md:p-6 md:pb-28 lg:pb-6">
       <PageHeader
         title="Aparelhos"
         total={total}
@@ -775,36 +777,46 @@ export default function AparelhosPage() {
         )}
       </PageHeader>
 
-      <DeviceOverviewPanel
-        title="Aparelhos"
-        total={overviewPanelTotal}
-        items={overviewPanelData}
-        accentClassName="bg-cyan-500"
-        activeFilters={activeOverviewFilters}
-        isLoading={overviewLoading}
-        onFilter={applyOverviewFilter}
-        exportConfig={overviewExportConfig}
-      />
+      <section className={mobileView === "overview" ? "block animate-in fade-in slide-in-from-bottom-2 duration-200 lg:block" : "hidden lg:block"}>
+        <DeviceOverviewPanel
+          title="Aparelhos"
+          total={overviewPanelTotal}
+          items={overviewPanelData}
+          accentClassName="bg-cyan-500"
+          activeFilters={activeOverviewFilters}
+          isLoading={overviewLoading}
+          onFilter={applyOverviewFilter}
+          exportConfig={overviewExportConfig}
+        />
+      </section>
 
-      <DataTable
-        columns={columns}
-        data={tableData}
-        total={tableTotal}
-        page={page}
-        totalPages={tableTotalPages}
-        onPageChange={setPage}
-        onRowClick={openInspect}
-        isLoading={
-          loading || overviewFilterLoading
-        }
-        filters={filters}
-        sort={sort}
-        dir={dir}
-        onSort={(field, newDir) => {
-          setSort(field);
-          setDir(newDir);
-          setPage(1);
-        }}
+      <section className={mobileView === "registros" ? "block animate-in fade-in slide-in-from-bottom-2 duration-200 lg:block" : "hidden lg:block"}>
+        <DataTable
+          columns={columns}
+          data={tableData}
+          total={tableTotal}
+          page={page}
+          totalPages={tableTotalPages}
+          onPageChange={setPage}
+          onRowClick={openInspect}
+          isLoading={
+            loading || overviewFilterLoading
+          }
+          filters={filters}
+          sort={sort}
+          dir={dir}
+          onSort={(field, newDir) => {
+            setSort(field);
+            setDir(newDir);
+            setPage(1);
+          }}
+        />
+      </section>
+
+      <MobileSectionNav
+        value={mobileView}
+        onViewChange={setMobileView}
+        views={INVENTORY_MOBILE_VIEWS}
       />
 
       <AnimatePresence initial={false}>

@@ -20,6 +20,7 @@ const schema = z.object({
   andar: z.string().optional().nullable(),
   servidor_impressao: z.string().optional().nullable(),
   tipo_usuario: z.string().optional().nullable(),
+  revisao: z.string().optional().nullable(),
   status: z.boolean().optional(),
 })
 type FormData = z.infer<typeof schema>
@@ -70,6 +71,7 @@ export function CriarImpressoraModal({ onClose, onRefresh }: Props) {
                 />
               </div>
               <div><label className={lbl}>Tipo de Usuário</label><input {...register('tipo_usuario')} className={inp} /></div>
+              <div><label className={lbl}>Última revisão</label><input type="date" {...register('revisao')} className={inp} /></div>
               <div className="flex items-center gap-2 pt-4">
                 <input type="checkbox" id="status-imp-criar" {...register('status')} className="w-4 h-4 rounded border-slate-300 text-blue-600" />
                 <label htmlFor="status-imp-criar" className="text-sm text-slate-700 dark:text-slate-300 cursor-pointer">Ativa</label>

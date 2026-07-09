@@ -41,6 +41,7 @@ export const TABELAS_OPCOES = [
   { value: 'notebooks',           label: 'Notebooks' },
   { value: 'aparelhos',           label: 'Aparelhos' },
   { value: 'impressoras',         label: 'Impressoras' },
+  { value: 'monitores',           label: 'Monitores' },
   { value: 'ramais',              label: 'Ramais' },
   { value: 'racks',               label: 'Racks' },
   { value: 'colaboradores',       label: 'Colaboradores' },
@@ -58,4 +59,5 @@ export const TABELAS_OPCOES = [
   { value: 'alocacoes_notebooks', label: 'Alocações — Notebooks' },
   { value: 'alocacoes_aparelhos', label: 'Alocações — Aparelhos' },
   { value: 'alocacoes_ramais',    label: 'Alocações — Ramais' },
+  { value: 'alocacoes_monitores', label: 'Alocações — Monitores' },
 ]

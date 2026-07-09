@@ -21,6 +21,10 @@ import { ACAO_LABELS, type AuditLog } from '@/lib/audit-constants'
 import { toast } from 'sonner'
 import { OverviewExportMenu, type OverviewExportConfig } from '@/components/tables/overview-export-menu'
 
+type DeviceOverviewAllocation = Omit<AlocacaoAtiva, 'colaborador'> & {
+  colaborador?: AlocacaoAtiva['colaborador']
+}
+
 export interface DeviceOverviewItem {
   id: string
   nome_host?: string | null
@@ -53,8 +57,8 @@ export interface DeviceOverviewItem {
   created_at?: string | null
   data_revisao?: string | null
   ultima_revisao?: string | null
-  alocacao_ativa?: AlocacaoAtiva | null
-  alocacoes_ativas?: AlocacaoAtiva[]
+  alocacao_ativa?: DeviceOverviewAllocation | null
+  alocacoes_ativas?: DeviceOverviewAllocation[]
 }
 
 export interface OverviewFilter {
@@ -230,7 +234,7 @@ const locationColors = [
 ]
 
 function getSetor(item: DeviceOverviewItem) {
-  return item.setor_nome || item.setor || item.alocacao_ativa?.colaborador.setor_rel?.nome || 'Sem setor'
+  return item.setor_nome || item.setor || item.alocacao_ativa?.colaborador?.setor_rel?.nome || 'Sem setor'
 }
 
 function getLocalidade(item: { localidade_id?: string | null; localidade_nome?: string | null }) {

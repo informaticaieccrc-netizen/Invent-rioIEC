@@ -117,18 +117,44 @@ export function ColaboradorModal({ colaborador, onClose, onRefresh }: Props) {
  async function handleConfirmarInativar() {
   setInativando(true);
   try {
+   if (!isAdmin) {
+    const res = await fetch("/api/solicitacoes-inventario", {
+     method: "POST",
+     headers: { "Content-Type": "application/json" },
+     body: JSON.stringify({
+      tipo_recurso: "colaboradores",
+      recurso_id: colaborador.id,
+      acao: "UPDATE",
+      dados_anteriores: colaborador,
+      dados_propostos: { status: "Inativo" },
+      comentario: "Solicitação de inativação de colaborador.",
+     }),
+    });
+    if (!res.ok) {
+     const err = await res.json().catch(() => ({}));
+     throw new Error(err.error || "Erro ao criar solicitação de inativação");
+    }
+    toast.success("Solicitação de inativação enviada para aprovação.");
+    onRefresh();
+    onClose();
+    return;
+   }
+
    const res = await fetch(`/api/colaboradores/${colaborador.id}/inativar`, {
     method: "POST",
    });
-   if (!res.ok) throw new Error();
+   if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || "Erro ao inativar colaborador");
+   }
    const data = await res.json();
    toast.success(
     `"${colaborador.nome}" inativado${data.totalDesalocados > 0 ? ` e ${data.totalDesalocados} alocação${data.totalDesalocados > 1 ? "ões" : ""} liberada${data.totalDesalocados > 1 ? "s" : ""}` : ""}.`,
    );
    onRefresh();
    onClose();
-  } catch {
-   toast.error("Erro ao inativar colaborador.");
+  } catch (error) {
+   toast.error(error instanceof Error ? error.message : "Erro ao inativar colaborador.");
   } finally {
    setInativando(false);
    setShowDeleteConfirm(false);

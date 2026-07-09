@@ -40,6 +40,14 @@ async function enrichAuditSnapshot(snapshot: Record<string, any> | null) {
   }
 }
 
+function normalizeImpressoraPayload(data: Record<string, unknown>) {
+  if (typeof data.revisao === 'string' && data.revisao) {
+    return { ...data, revisao: new Date(`${data.revisao}T00:00:00.000Z`) }
+  }
+  if (data.revisao === '' || data.revisao === null) return { ...data, revisao: null }
+  return data
+}
+
 export async function GET(_: Request, { params }: Props) {
   const session = await getServerSession(authOptions)
 
@@ -102,8 +110,9 @@ export async function PUT(request: Request, { params }: Props) {
     setor_rel,
     localidade_nome,
     localidade_rel,
-    ...data
+    ...rawData
   } = body
+  const data = normalizeImpressoraPayload(rawData)
 
   const anterior = await prisma.impressoras.findUnique({
     where: { id },

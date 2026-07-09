@@ -12,6 +12,14 @@ function parseSetorIds(value: string) {
   return value.split(',').map(item => item.trim()).filter(Boolean)
 }
 
+function normalizeImpressoraPayload(data: Record<string, unknown>) {
+  if (typeof data.revisao === 'string' && data.revisao) {
+    return { ...data, revisao: new Date(`${data.revisao}T00:00:00.000Z`) }
+  }
+  if (data.revisao === '' || data.revisao === null) return { ...data, revisao: null }
+  return data
+}
+
 export async function GET(request: Request) {
   try {
     const session = await getServerSession(authOptions)
@@ -31,7 +39,7 @@ export async function GET(request: Request) {
     const dir     = searchParams.get('dir') === 'desc' ? 'desc' : 'asc'
 
     const validSortFields: Record<string, boolean> = {
-      modelo: true, fabricante: true, andar: true, numero_serie: true, nome_host: true, created_at: true,
+      modelo: true, fabricante: true, andar: true, numero_serie: true, nome_host: true, revisao: true, created_at: true,
     }
     const safeSort = validSortFields[sort] ? sort : 'modelo'
 
@@ -100,7 +108,7 @@ export async function POST(request: Request) {
 
     const { usuario_id, usuario_nome } = await getAuditSession()
     const body = await request.json()
-    const data = await withLocalidadePadrao(body)
+    const data = await withLocalidadePadrao(normalizeImpressoraPayload(body))
     const item = await prisma.impressoras.create({ data })
 
     await registrarAuditoria({

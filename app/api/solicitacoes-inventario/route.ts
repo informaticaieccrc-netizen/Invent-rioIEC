@@ -6,7 +6,8 @@ import { authOptions, isPrivilegedProfile } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { getAuditSession, registrarAuditoria } from '@/lib/audit'
 import {
-  buscarSnapshotInventario,
+  assimilarTrocaAlocacaoPendente,
+  buscarSnapshotSolicitacaoInventario,
   cleanInventarioPayload,
   enriquecerPayloadInventario,
   normalizarTipoRecurso,
@@ -31,6 +32,22 @@ function buildComentario(texto: unknown, autor: { id: string | null; nome: strin
     papel,
     conteudo,
     created_at: new Date().toISOString(),
+  }
+}
+
+async function enriquecerSolicitacaoListada(solicitacao: any) {
+  const tipoRecurso = normalizarTipoRecurso(String(solicitacao.tipo_recurso ?? ''))
+  if (!tipoRecurso || tipoRecurso === 'forum_arquivos') return solicitacao
+
+  const [dadosAnteriores, dadosPropostos] = await Promise.all([
+    buscarSnapshotSolicitacaoInventario(tipoRecurso, solicitacao.recurso_id ?? null, solicitacao.dados_anteriores),
+    enriquecerPayloadInventario(tipoRecurso, solicitacao.dados_propostos ?? {}),
+  ])
+
+  return {
+    ...solicitacao,
+    dados_anteriores: dadosAnteriores,
+    dados_propostos: dadosPropostos,
   }
 }
 
@@ -64,7 +81,8 @@ export async function GET(request: Request) {
       delegate.count({ where }),
     ])
 
-    return NextResponse.json({ data: sanitizeSolicitacoesInventarioResponse(data), total, page, totalPages: Math.ceil(total / limit) })
+    const enriched = await Promise.all(data.map(enriquecerSolicitacaoListada))
+    return NextResponse.json({ data: sanitizeSolicitacoesInventarioResponse(enriched), total, page, totalPages: Math.ceil(total / limit) })
   } catch (error) {
     console.error('[GET /api/solicitacoes-inventario]', error)
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
@@ -90,13 +108,31 @@ export async function POST(request: Request) {
     }
 
     const { usuario_id, usuario_nome } = await getAuditSession()
-    const dadosAnterioresRaw = body?.dados_anteriores ?? await buscarSnapshotInventario(tipoRecurso, recursoId)
-    const dadosAnteriores = dadosAnterioresRaw
-      ? await enriquecerPayloadInventario(tipoRecurso, dadosAnterioresRaw)
-      : null
+    const dadosAnteriores = await buscarSnapshotSolicitacaoInventario(tipoRecurso, recursoId, body?.dados_anteriores)
     const dadosPropostosBase = cleanInventarioPayload(body?.dados_propostos ?? body?.data ?? {})
     const dadosPropostos = await enriquecerPayloadInventario(tipoRecurso, dadosPropostosBase)
     const comentarioInicial = buildComentario(body?.comentario, { id: usuario_id, nome: usuario_nome }, 'solicitante')
+
+    const trocaAssimilada = await assimilarTrocaAlocacaoPendente({
+      tipoRecurso,
+      acao,
+      dadosPropostos: dadosPropostos as Record<string, unknown>,
+      comentario: comentarioInicial,
+      usuarioId: usuario_id,
+    })
+    if (trocaAssimilada) {
+      await registrarAuditoria({
+        tabela: 'solicitacoes_inventario',
+        registro_id: trocaAssimilada.id,
+        acao: 'UPDATE',
+        descricao: `Solicitação de desalocação assimilada como troca em ${tipoRecurso}`,
+        dados_anteriores: trocaAssimilada.dados_anteriores as any,
+        dados_novos: trocaAssimilada as any,
+        usuario_id,
+        usuario_nome,
+      })
+      return NextResponse.json(sanitizeSolicitacaoInventarioResponse(trocaAssimilada), { status: 200 })
+    }
 
     const solicitacao = await solicitacoesInventarioDelegate().create({
       data: {

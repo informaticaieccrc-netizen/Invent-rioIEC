@@ -24,6 +24,14 @@ model usuarios {
   forum_arquivos    forum_arquivos[]
   forum_pastas      forum_pastas[]
   forum_avaliacoes  forum_topico_avaliacoes[]
+  checklists_criados checklists_validacao[] @relation("ChecklistCriadoPor")
+  checklist_solicitacoes_assumidas checklists_validacao_solicitacoes[] @relation("ChecklistSolicitacaoAssumidaPor")
+  checklist_solicitacoes_revisadas checklists_validacao_solicitacoes[] @relation("ChecklistSolicitacaoRevisadaPor")
+  checklist_itens_preenchidos checklists_validacao_itens[] @relation("ChecklistItemPreenchidoPor")
+  checklist_itens_revisados checklists_validacao_itens[] @relation("ChecklistItemRevisadoPor")
+  checklist_racks_respostas checklists_validacao_racks_respostas[] @relation("ChecklistRackPreenchidoPor")
+  monitores_criados monitores[] @relation("MonitorCriadoPor")
+  alocacoes_monitores_criadas alocacoes_monitores[] @relation("AlocacaoMonitorCriadaPor")
 
   @@index([codigo_pessoa], map: "idx_usuarios_codigo_pessoa")
 }
@@ -65,6 +73,8 @@ model setores {
   notebooks             notebooks[]
   racks                 racks[]
   ramais                ramais[]
+  checklist_solicitacoes checklists_validacao_solicitacoes[]
+  alocacoes_monitores   alocacoes_monitores[]
 
   @@index([ativo], map: "idx_setores_ativo")
   @@index([nome], map: "idx_setores_nome")
@@ -82,6 +92,7 @@ model localidades {
   notebooks     notebooks[]
   racks         racks[]
   ramais        ramais[]
+  checklists_validacao checklists_validacao[]
 
   @@index([ativo], map: "idx_localidades_ativo")
   @@index([nome], map: "idx_localidades_nome")
@@ -131,6 +142,11 @@ model maquinas {
   localidade_rel     localidades?           @relation(fields: [localidade_id], references: [id], onUpdate: NoAction)
   setor_rel          setores?               @relation(fields: [setor_id], references: [id], onUpdate: NoAction)
   solicitacoes_snow_itens solicitacoes_snow_itens[]
+  checklist_ultima_id String? @db.Uuid
+  checklist_tecnico_id String? @db.Uuid
+  checklist_revisor_id String? @db.Uuid
+  checklist_revisado_em DateTime? @db.Timestamptz(6)
+  alocacoes_monitores alocacoes_monitores[]
 
   @@index([identificador], map: "idx_maquinas_identificador")
   @@index([localidade_id], map: "idx_maquinas_localidade_id")
@@ -201,6 +217,10 @@ model impressoras {
   setor_id           String?      @db.Uuid
   localidade_rel     localidades? @relation(fields: [localidade_id], references: [id], onUpdate: NoAction)
   setor_rel          setores?     @relation(fields: [setor_id], references: [id], onUpdate: NoAction)
+  checklist_ultima_id String? @db.Uuid
+  checklist_tecnico_id String? @db.Uuid
+  checklist_revisor_id String? @db.Uuid
+  checklist_revisado_em DateTime? @db.Timestamptz(6)
 
   @@index([localidade_id], map: "idx_impressoras_localidade_id")
 }
@@ -221,6 +241,10 @@ model ramais {
   alocacoes           alocacoes_ramais[]
   localidade_rel      localidades?       @relation(fields: [localidade_id], references: [id], onUpdate: NoAction)
   setor_rel           setores?           @relation(fields: [setor_id], references: [id], onUpdate: NoAction)
+  checklist_ultima_id String? @db.Uuid
+  checklist_tecnico_id String? @db.Uuid
+  checklist_revisor_id String? @db.Uuid
+  checklist_revisado_em DateTime? @db.Timestamptz(6)
 
   @@index([localidade_id], map: "idx_ramais_localidade_id")
 }
@@ -241,6 +265,12 @@ model racks {
   setor_id                String?      @db.Uuid
   localidade_rel          localidades? @relation(fields: [localidade_id], references: [id], onUpdate: NoAction)
   setor_rel               setores?     @relation(fields: [setor_id], references: [id], onUpdate: NoAction)
+  checklist_ultima_id String? @db.Uuid
+  checklist_tecnico_id String? @db.Uuid
+  checklist_revisor_id String? @db.Uuid
+  checklist_validado_em DateTime? @db.Timestamptz(6)
+  checklist_solicitacoes checklists_validacao_solicitacoes[]
+  checklist_rack_respostas checklists_validacao_racks_respostas[]
 
   @@index([localidade_id], map: "idx_racks_localidade_id")
 }
@@ -310,6 +340,167 @@ model alocacoes_ramais {
   ramal           ramais?        @relation(fields: [ramal_id], references: [id], onUpdate: NoAction)
 
   @@index([colaborador_id], map: "idx_alocacoes_ramais_colaborador")
+}
+
+model checklists_validacao {
+  id             String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  nome           String
+  localidade_id  String    @db.Uuid
+  incluir_racks  Boolean   @default(false)
+  status         String    @default("aberto")
+  data_inicio    DateTime? @db.Date
+  data_fim       DateTime? @db.Date
+  criado_por     String?   @db.Uuid
+  criado_em      DateTime? @default(now()) @db.Timestamptz(6)
+  atualizado_em  DateTime? @default(now()) @db.Timestamptz(6)
+  localidade     localidades @relation(fields: [localidade_id], references: [id], onUpdate: NoAction)
+  criador        usuarios? @relation("ChecklistCriadoPor", fields: [criado_por], references: [id], onUpdate: NoAction)
+  solicitacoes   checklists_validacao_solicitacoes[]
+
+  @@index([localidade_id], map: "idx_checklists_validacao_localidade")
+  @@index([status], map: "idx_checklists_validacao_status")
+  @@index([criado_em(sort: Desc)], map: "idx_checklists_validacao_criado_em")
+}
+
+model checklists_validacao_solicitacoes {
+  id                      String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  checklist_validacao_id  String    @db.Uuid
+  tipo_solicitacao        String
+  setor_id                String?   @db.Uuid
+  rack_id                 String?   @db.Uuid
+  status                  String    @default("aberta")
+  assumido_por            String?   @db.Uuid
+  assumido_em             DateTime? @db.Timestamptz(6)
+  finalizado_em           DateTime? @db.Timestamptz(6)
+  revisado_por            String?   @db.Uuid
+  revisado_em             DateTime? @db.Timestamptz(6)
+  status_revisao          String    @default("pendente")
+  planner_task_id         String?
+  planner_status          String    @default("pendente")
+  planner_atualizado_em   DateTime? @db.Timestamptz(6)
+  csc_numero              String?
+  csc_criado_em           DateTime? @db.Timestamptz(6)
+  csc_atualizado_em       DateTime? @db.Timestamptz(6)
+  link_inventario         String?
+  comentarios             Json?     @default("[]")
+  criado_em               DateTime? @default(now()) @db.Timestamptz(6)
+  atualizado_em           DateTime? @default(now()) @db.Timestamptz(6)
+  checklist               checklists_validacao @relation(fields: [checklist_validacao_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  setor                   setores? @relation(fields: [setor_id], references: [id], onUpdate: NoAction)
+  rack                    racks? @relation(fields: [rack_id], references: [id], onUpdate: NoAction)
+  tecnico                 usuarios? @relation("ChecklistSolicitacaoAssumidaPor", fields: [assumido_por], references: [id], onUpdate: NoAction)
+  revisor                 usuarios? @relation("ChecklistSolicitacaoRevisadaPor", fields: [revisado_por], references: [id], onUpdate: NoAction)
+  itens                   checklists_validacao_itens[]
+  diffs                   checklists_validacao_diffs[]
+  rack_resposta           checklists_validacao_racks_respostas?
+
+  @@index([checklist_validacao_id], map: "idx_checklist_solicitacoes_checklist")
+  @@index([status], map: "idx_checklist_solicitacoes_status")
+  @@index([planner_status], map: "idx_checklist_solicitacoes_planner_status")
+}
+
+model checklists_validacao_itens {
+  id                                  String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  checklist_validacao_solicitacao_id  String    @db.Uuid
+  tipo_item                           String
+  referencia_id                       String?   @db.Uuid
+  identificador_informado             String?
+  dados_informados_json               Json?
+  status_revisao                      String    @default("pendente")
+  preenchido_por                      String?   @db.Uuid
+  preenchido_em                       DateTime? @db.Timestamptz(6)
+  revisado_por                        String?   @db.Uuid
+  revisado_em                         DateTime? @db.Timestamptz(6)
+  criado_em                           DateTime? @default(now()) @db.Timestamptz(6)
+  atualizado_em                       DateTime? @default(now()) @db.Timestamptz(6)
+  solicitacao                         checklists_validacao_solicitacoes @relation(fields: [checklist_validacao_solicitacao_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  preenchido_usuario                  usuarios? @relation("ChecklistItemPreenchidoPor", fields: [preenchido_por], references: [id], onUpdate: NoAction)
+  revisado_usuario                    usuarios? @relation("ChecklistItemRevisadoPor", fields: [revisado_por], references: [id], onUpdate: NoAction)
+  diffs                               checklists_validacao_diffs[]
+
+  @@index([checklist_validacao_solicitacao_id], map: "idx_checklist_itens_solicitacao")
+  @@index([tipo_item], map: "idx_checklist_itens_tipo")
+  @@index([referencia_id], map: "idx_checklist_itens_referencia")
+}
+
+model checklists_validacao_diffs {
+  id                                  String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  checklist_validacao_item_id         String    @db.Uuid
+  checklist_validacao_solicitacao_id  String    @db.Uuid
+  campo                               String
+  valor_atual                         Json?
+  valor_informado                     Json?
+  tipo_diff                           String
+  status_revisao                      String    @default("pendente")
+  criado_em                           DateTime? @default(now()) @db.Timestamptz(6)
+  atualizado_em                       DateTime? @default(now()) @db.Timestamptz(6)
+  item                                checklists_validacao_itens @relation(fields: [checklist_validacao_item_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  solicitacao                         checklists_validacao_solicitacoes @relation(fields: [checklist_validacao_solicitacao_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([checklist_validacao_item_id], map: "idx_checklist_diffs_item")
+  @@index([checklist_validacao_solicitacao_id], map: "idx_checklist_diffs_solicitacao")
+  @@index([status_revisao], map: "idx_checklist_diffs_status")
+}
+
+model checklists_validacao_racks_respostas {
+  id                                  String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  checklist_validacao_solicitacao_id  String    @unique @db.Uuid
+  rack_id                             String    @db.Uuid
+  dados_informados_json               Json?
+  observacoes                         String?
+  preenchido_por                      String?   @db.Uuid
+  preenchido_em                       DateTime? @db.Timestamptz(6)
+  criado_em                           DateTime? @default(now()) @db.Timestamptz(6)
+  atualizado_em                       DateTime? @default(now()) @db.Timestamptz(6)
+  solicitacao                         checklists_validacao_solicitacoes @relation(fields: [checklist_validacao_solicitacao_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  rack                                racks @relation(fields: [rack_id], references: [id], onUpdate: NoAction)
+  preenchido_usuario                  usuarios? @relation("ChecklistRackPreenchidoPor", fields: [preenchido_por], references: [id], onUpdate: NoAction)
+
+  @@index([rack_id], map: "idx_checklist_rack_respostas_rack")
+}
+
+model monitores {
+  id                    String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  codigo_interno        String?   @unique
+  patrimonio            String?   @unique
+  serial                String?
+  marca                 String?
+  modelo                String?
+  status                String    @default("ativo")
+  criado_via_checklist  Boolean   @default(false)
+  criado_por            String?   @db.Uuid
+  criado_em             DateTime? @default(now()) @db.Timestamptz(6)
+  atualizado_em         DateTime? @default(now()) @db.Timestamptz(6)
+  checklist_ultima_id   String?   @db.Uuid
+  checklist_tecnico_id  String?   @db.Uuid
+  checklist_revisor_id  String?   @db.Uuid
+  checklist_revisado_em DateTime? @db.Timestamptz(6)
+  criador               usuarios? @relation("MonitorCriadoPor", fields: [criado_por], references: [id], onUpdate: NoAction)
+  alocacoes             alocacoes_monitores[]
+
+  @@index([serial], map: "idx_monitores_serial")
+  @@index([status], map: "idx_monitores_status")
+}
+
+model alocacoes_monitores {
+  id             String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  monitor_id     String    @db.Uuid
+  maquina_id     String?   @db.Uuid
+  setor_id       String?   @db.Uuid
+  data_inicio    DateTime? @db.Date
+  data_fim       DateTime? @db.Date
+  ativo          Boolean   @default(true)
+  criado_por     String?   @db.Uuid
+  criado_em      DateTime? @default(now()) @db.Timestamptz(6)
+  atualizado_em  DateTime? @default(now()) @db.Timestamptz(6)
+  monitor        monitores @relation(fields: [monitor_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  maquina        maquinas? @relation(fields: [maquina_id], references: [id], onUpdate: NoAction)
+  setor          setores? @relation(fields: [setor_id], references: [id], onUpdate: NoAction)
+  criador        usuarios? @relation("AlocacaoMonitorCriadaPor", fields: [criado_por], references: [id], onUpdate: NoAction)
+
+  @@index([monitor_id], map: "idx_alocacoes_monitores_monitor")
+  @@index([maquina_id], map: "idx_alocacoes_monitores_maquina")
+  @@index([setor_id], map: "idx_alocacoes_monitores_setor")
 }
 
 model movimentacoes {
