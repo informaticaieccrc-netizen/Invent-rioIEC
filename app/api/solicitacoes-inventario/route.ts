@@ -116,6 +116,8 @@ export async function POST(request: Request) {
     const trocaAssimilada = await assimilarTrocaAlocacaoPendente({
       tipoRecurso,
       acao,
+      recursoId,
+      dadosAnteriores: dadosAnteriores as Record<string, unknown> | null,
       dadosPropostos: dadosPropostos as Record<string, unknown>,
       comentario: comentarioInicial,
       usuarioId: usuario_id,

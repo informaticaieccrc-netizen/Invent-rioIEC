@@ -68,6 +68,16 @@ export function AlocacoesAtivasSection({
     router.push(href)
   }
 
+  function abrirPedidoCriado(pedido: { id?: string; dados_propostos?: { colaborador_nome?: string }; acao?: string }) {
+    if (!pedido.id) return
+    const href = `/pedidos?inspect=${pedido.id}`
+    writePendingInspectPreview(window.sessionStorage, href, {
+      title: pedido.dados_propostos?.colaborador_nome ?? novoColabNome ?? 'Pedido de inventário',
+      subtitle: pedido.acao ? `Pedido ${pedido.acao}` : 'Pedido de inventário',
+    })
+    router.push(href)
+  }
+
   // Alocar novo colaborador
   async function alocar() {
     if (!novoColabId) return
@@ -93,9 +103,11 @@ export function AlocacoesAtivasSection({
           }),
         })
         if (!res.ok) throw new Error()
+        const pedido = await res.json().catch(() => null)
         toast.success('Solicitação enviada para aprovação.')
         setNovoColabId('')
         setNovoColabNome('')
+        if (pedido) abrirPedidoCriado(pedido)
         return
       }
       const res = await fetch(`/api/alocacoes/${entidade}`, {
@@ -136,7 +148,9 @@ export function AlocacoesAtivasSection({
           }),
         })
         if (!res.ok) throw new Error()
+        const pedido = await res.json().catch(() => null)
         toast.success('Solicitação enviada para aprovação.')
+        if (pedido) abrirPedidoCriado(pedido)
         return
       }
       const res = await fetch(`/api/alocacoes/${entidade}/${alocacaoId}`, {
@@ -174,8 +188,10 @@ export function AlocacoesAtivasSection({
           }),
         })
         if (!res.ok) throw new Error()
+        const pedido = await res.json().catch(() => null)
         toast.success('Solicitação enviada para aprovação.')
         setEditandoWhatsappId(null)
+        if (pedido) abrirPedidoCriado(pedido)
         return
       }
       const res = await fetch(`/api/alocacoes/${entidade}/${alocacaoId}`, {

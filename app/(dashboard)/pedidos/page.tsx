@@ -680,7 +680,7 @@ export default function PedidosPage() {
   }, [pedidos, statusFilter, kindFilter, actionFilter])
 
   const overview = useMemo(() => {
-    const overviewItems = statusFilter || kindFilter || actionFilter ? filtered : pedidos
+    const overviewItems = pedidos
     const byStatus = {
       pendente: overviewItems.filter(pedido => pedido.status === 'pendente').length,
       aprovada: overviewItems.filter(pedido => pedido.status === 'aprovada').length,
@@ -697,7 +697,7 @@ export default function PedidosPage() {
     }))
 
     return { byStatus, byKind, byAction }
-  }, [pedidos, filtered, statusFilter, kindFilter, actionFilter])
+  }, [pedidos])
   const pedidoOverviewFilters = [
     statusFilter ? { kind: 'status', value: statusFilter, label: STATUS_META[statusFilter].label } : null,
     kindFilter ? { kind: 'tipo', value: kindFilter, label: KIND_META[kindFilter].label } : null,
