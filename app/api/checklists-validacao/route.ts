@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions, requireAdmin } from '@/lib/auth'
 import { ChecklistError, createChecklist, delegate } from '@/lib/checklists-validacao'
 import { getAuditSession } from '@/lib/audit'
+import { notifyChecklistCreation } from '@/lib/checklist/power-automate'
 
 export const runtime = 'nodejs'
 
@@ -61,6 +62,7 @@ export async function POST(request: Request) {
       origin: new URL(request.url).origin,
       user: { id: usuario_id, nome: usuario_nome },
     })
+    await notifyChecklistCreation(checklist.id)
     return NextResponse.json(checklist, { status: 201 })
   } catch (error) {
     if (error instanceof ChecklistError) return NextResponse.json({ error: error.message }, { status: error.status })
