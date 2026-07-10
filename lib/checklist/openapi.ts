@@ -128,6 +128,23 @@ export function buildChecklistOpenApiSpec(origin?: string) {
           },
         },
       },
+      '/api/checklist/solicitacoes/{id}/planner-id': {
+        post: {
+          tags: ['Checklist - Chamadas externas'],
+          summary: 'Vincular ID da tarefa criada no Planner',
+          description:
+            'Recebe o `planner_task_id` logo após o Power Automate criar o card no Planner. Não assume, não conclui e não altera o status interno da solicitação. Se a solicitação já possuir outro ID Planner, retorna `409` para evitar vínculo incorreto.',
+          security: externalSecurity,
+          parameters: [uuidParam('id', 'ID da solicitação de checklist.')],
+          requestBody: jsonBody({ $ref: '#/components/schemas/ChecklistPlannerIdPayload' }),
+          responses: {
+            '200': jsonResponse('ID do Planner vinculado à solicitação.', { $ref: '#/components/schemas/ChecklistSolicitacaoExterna' }),
+            '401': errorResponse('Token de integração ausente ou inválido.'),
+            '404': errorResponse('Solicitação não encontrada.'),
+            '409': errorResponse('Solicitação já vinculada a outro ID do Planner.'),
+          },
+        },
+      },
       '/api/checklist/solicitacoes/{id}/concluir': {
         post: {
           tags: ['Checklist - Chamadas externas'],
@@ -630,6 +647,21 @@ export function buildChecklistOpenApiSpec(origin?: string) {
             tecnico_email: { type: 'string', nullable: true, example: 'maria@pucminas.br' },
             tecnico_codigo_pessoa: { type: 'string', nullable: true, example: '123456' },
             atribuido_em: { type: 'string', format: 'date-time', nullable: true },
+          },
+        },
+        ChecklistPlannerIdPayload: {
+          type: 'object',
+          required: ['planner_task_id'],
+          properties: {
+            planner_task_id: { type: 'string', example: 'planner-task-123' },
+            origem: { type: 'string', nullable: true, example: 'Power Automate' },
+            criado_em: {
+              type: 'string',
+              format: 'date-time',
+              nullable: true,
+              description: 'Informativo para auditoria externa. O inventário usa o horário de recebimento como data de atualização.',
+            },
+            observacao: { type: 'string', nullable: true },
           },
         },
         ChecklistConcluirPayload: {

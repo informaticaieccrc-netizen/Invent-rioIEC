@@ -1,4 +1,5 @@
 import { delegate, ChecklistError, sanitizeSolicitacao } from '@/lib/checklists-validacao'
+import { registrarAuditoria } from '@/lib/audit'
 import { prisma } from '@/lib/prisma'
 
 function text(value: unknown) {
@@ -62,6 +63,45 @@ export async function plannerAtribuirSolicitacao(id: string, payload: any) {
     data,
     include: { tecnico: true, setor: true, rack: true, _count: { select: { itens: true, diffs: true } } },
   })
+  return sanitizeSolicitacao(solicitacao)
+}
+
+export async function plannerVincularSolicitacao(id: string, payload: any) {
+  const plannerTaskId = text(payload?.planner_task_id)
+  if (!plannerTaskId) throw new ChecklistError('planner_task_id é obrigatório')
+
+  const atual = await delegate('checklists_validacao_solicitacoes').findUnique({
+    where: { id },
+    include: { tecnico: true, setor: true, rack: true, _count: { select: { itens: true, diffs: true } } },
+  })
+  if (!atual) throw new ChecklistError('Solicitação não encontrada', 404)
+  if (atual.planner_task_id && atual.planner_task_id !== plannerTaskId) {
+    throw new ChecklistError('Solicitação já vinculada a outro ID do Planner', 409)
+  }
+
+  const solicitacao = await delegate('checklists_validacao_solicitacoes').update({
+    where: { id },
+    data: {
+      planner_task_id: plannerTaskId,
+      planner_atualizado_em: new Date(),
+      atualizado_em: new Date(),
+    },
+    include: { tecnico: true, setor: true, rack: true, _count: { select: { itens: true, diffs: true } } },
+  })
+
+  await registrarAuditoria({
+    tabela: 'checklists_validacao_solicitacoes',
+    registro_id: id,
+    acao: 'UPDATE',
+    descricao: atual.planner_task_id
+      ? 'ID do Planner confirmado pela integração Checklist'
+      : 'ID do Planner vinculado pela integração Checklist',
+    dados_anteriores: { planner_task_id: atual.planner_task_id, planner_status: atual.planner_status },
+    dados_novos: { planner_task_id: plannerTaskId, planner_status: solicitacao.planner_status },
+    usuario_id: null,
+    usuario_nome: text(payload?.origem) ?? 'Power Automate',
+  })
+
   return sanitizeSolicitacao(solicitacao)
 }
 

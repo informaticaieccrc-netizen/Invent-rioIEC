@@ -9,7 +9,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Token de integração Checklist inválido' }, { status: 401 })
   }
   const data = await delegate('checklists_validacao_solicitacoes').findMany({
-    where: { planner_status: 'pendente', status: { in: ['aberta', 'assumida'] } },
+    where: { planner_status: 'pendente', planner_task_id: null, status: { in: ['aberta', 'assumida'] } },
     take: 200,
     orderBy: { criado_em: 'asc' },
     include: {
