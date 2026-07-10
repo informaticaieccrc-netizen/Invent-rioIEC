@@ -16,6 +16,7 @@ export type ChecklistSolicitacaoResumo = {
   status: string
   status_revisao: string
   planner_status: string
+  planner_task_id?: string | null
   setor_nome: string | null
   rack_nome: string | null
   tecnico_nome: string | null
@@ -23,6 +24,24 @@ export type ChecklistSolicitacaoResumo = {
   itens_count: number
   diffs_count: number
   cobertura?: Cobertura
+}
+
+export function PlannerSyncBadge({ plannerTaskId, plannerStatus }: { plannerTaskId?: string | null; plannerStatus: string }) {
+  const linked = Boolean(plannerTaskId)
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold ${
+        linked
+          ? 'border-violet-500/35 bg-violet-500/10 text-violet-200'
+          : 'border-amber-500/35 bg-amber-500/10 text-amber-200'
+      }`}
+      title={linked ? `Planner vinculado: ${plannerTaskId}` : 'Aguardando criação da tarefa no Planner'}
+    >
+      <Server className="h-3.5 w-3.5" />
+      {linked ? 'Planner criado' : 'Aguardando Planner'}
+      <span className="hidden opacity-70 sm:inline">· {plannerStatus}</span>
+    </span>
+  )
 }
 
 export function checklistStatusClass(status: string) {
@@ -114,7 +133,9 @@ export function SolicitacaoCard({ anchorId, solicitacao }: { anchorId?: string; 
               <span className={`rounded-full border px-2 py-1 text-xs font-semibold ${checklistStatusClass(solicitacao.status)}`}>{solicitacao.status}</span>
             </div>
             <h3 className="mt-2 line-clamp-2 text-xl font-bold text-slate-900 group-hover:text-blue-700 dark:text-white dark:group-hover:text-blue-300">{title}</h3>
-            <p className="mt-1 truncate text-xs text-slate-500">Planner {solicitacao.planner_status}</p>
+            <div className="mt-2">
+              <PlannerSyncBadge plannerTaskId={solicitacao.planner_task_id} plannerStatus={solicitacao.planner_status} />
+            </div>
           </div>
         </div>
 
@@ -136,7 +157,7 @@ export function SolicitacaoCard({ anchorId, solicitacao }: { anchorId?: string; 
         <div className="mt-4 grid grid-cols-3 gap-2 border-t border-slate-100 pt-3 text-xs text-slate-500 dark:border-slate-800">
           <span><ClipboardList className="mb-1 h-3.5 w-3.5" />{solicitacao.itens_count} itens</span>
           <span><CheckCircle2 className="mb-1 h-3.5 w-3.5" />{solicitacao.diffs_count} diffs</span>
-          <span><Server className="mb-1 h-3.5 w-3.5" />Planner {solicitacao.planner_status}</span>
+          <span><Server className="mb-1 h-3.5 w-3.5" />{solicitacao.planner_task_id ? 'Criado' : 'Sem card'}</span>
         </div>
       </Link>
     </motion.div>
@@ -160,6 +181,9 @@ export function RackSidebarCard({ anchorId, solicitacao }: { anchorId?: string; 
         <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
           <span>{solicitacao.tecnico_nome ?? 'Sem técnico'}</span>
           <span>{formatChecklistDateTime(solicitacao.ultimo_preenchimento_em)}</span>
+        </div>
+        <div className="mt-3">
+          <PlannerSyncBadge plannerTaskId={solicitacao.planner_task_id} plannerStatus={solicitacao.planner_status} />
         </div>
       </Link>
     </motion.div>

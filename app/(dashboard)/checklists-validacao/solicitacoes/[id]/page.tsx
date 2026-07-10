@@ -29,6 +29,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { ChecklistNavPills } from '@/components/checklists/checklist-nav-pills'
 import { ChecklistMobileBottomNav } from '@/components/checklists/checklist-mobile-bottom-nav'
 import { ChecklistContextOverview, type ChecklistContextMetric } from '@/components/checklists/checklist-context-overview'
+import { PlannerSyncBadge } from '@/components/checklists/checklist-overview-cards'
 import { LocalidadeSelect } from '@/components/modals/localidade-select'
 import { usePermission } from '@/hooks/use-permission'
 
@@ -46,6 +47,7 @@ type Solicitacao = {
   status: string
   status_revisao: string
   planner_status: string
+  planner_task_id?: string | null
   assumido_por?: string | null
   assumida_pelo_usuario?: boolean
   assumida_por_outro?: boolean
@@ -1131,8 +1133,11 @@ export default function ChecklistSolicitacaoPage() {
             {data.tipo_solicitacao === 'SETOR' ? 'Setor' : 'Rack'} · {data.setor_nome ?? data.rack_nome ?? 'Solicitação'}
           </h1>
           <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500 dark:text-slate-400">
-            {data.checklist?.nome ?? 'Checklist'} · {data.status} · Planner {data.planner_status}{data.tecnico_nome ? ` · ${data.tecnico_nome}` : ''}
+            {data.checklist?.nome ?? 'Checklist'} · {data.status}{data.tecnico_nome ? ` · ${data.tecnico_nome}` : ''}
           </p>
+          <div className="mt-3">
+            <PlannerSyncBadge plannerTaskId={data.planner_task_id} plannerStatus={data.planner_status} />
+          </div>
         </div>
         <div className="grid grid-cols-2 gap-2 sm:flex sm:w-auto">
           <ActionButton
