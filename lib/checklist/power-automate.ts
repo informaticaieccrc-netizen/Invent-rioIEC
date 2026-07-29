@@ -1,5 +1,5 @@
 import { registrarAuditoria } from '@/lib/audit'
-import { checklistUrl, delegate } from '@/lib/checklists-validacao'
+import { checklistUrl, delegate, publicAppOrigin } from '@/lib/checklists-validacao'
 
 type ChecklistWebhookEvent = 'solicitacao_criada' | 'solicitacao_assumida' | 'solicitacao_finalizada'
 
@@ -82,7 +82,18 @@ function descriptionFor(solicitacao: any) {
 }
 
 function normalizedLink(solicitacao: any) {
-  return text(solicitacao.link_inventario) ?? checklistUrl(solicitacao.id)
+  const saved = text(solicitacao.link_inventario)
+  if (!saved) return checklistUrl(solicitacao.id)
+
+  try {
+    const url = new URL(saved)
+    const isLocal = ['localhost', '127.0.0.1', '0.0.0.0'].includes(url.hostname)
+    if (!isLocal) return saved
+  } catch {
+    return saved
+  }
+
+  return publicAppOrigin() ? checklistUrl(solicitacao.id) : saved
 }
 
 function buildCreatePayload(solicitacao: any) {

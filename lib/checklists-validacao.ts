@@ -24,9 +24,32 @@ export function delegate(name: string) {
   return (prisma as any)[name] as any
 }
 
+function normalizeOrigin(value?: string | null) {
+  const raw = text(value)
+  if (!raw) return null
+  const withProtocol = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`
+  try {
+    const url = new URL(withProtocol)
+    return url.origin
+  } catch {
+    return null
+  }
+}
+
+export function publicAppOrigin(fallback?: string | null) {
+  return normalizeOrigin(process.env.CHECKLIST_PUBLIC_BASE_URL)
+    ?? normalizeOrigin(process.env.NEXT_PUBLIC_APP_URL)
+    ?? normalizeOrigin(process.env.APP_URL)
+    ?? normalizeOrigin(process.env.NEXTAUTH_URL)
+    ?? normalizeOrigin(process.env.VERCEL_PROJECT_PRODUCTION_URL)
+    ?? normalizeOrigin(process.env.VERCEL_URL)
+    ?? normalizeOrigin(fallback)
+}
+
 export function checklistUrl(solicitacaoId: string, origin?: string | null) {
   const path = `/checklists-validacao/solicitacoes/${solicitacaoId}`
-  return origin ? `${origin.replace(/\/$/, '')}${path}` : path
+  const resolvedOrigin = publicAppOrigin(origin)
+  return resolvedOrigin ? `${resolvedOrigin}${path}` : path
 }
 
 function text(value: unknown) {

@@ -4,12 +4,26 @@ import { authOptions, isPrivilegedProfile } from '@/lib/auth'
 import { ChecklistError, delegate, ensureSolicitacaoEditable, gerarDiffSolicitacao } from '@/lib/checklists-validacao'
 import { getAuditSession, registrarAuditoria } from '@/lib/audit'
 import { notifyChecklistSolicitacaoStatus } from '@/lib/checklist/power-automate'
+import { isChecklistIntegrationAuthorized } from '@/lib/checklist/auth'
+import { plannerConcluirSolicitacao } from '@/lib/checklist/planner'
 
 export const runtime = 'nodejs'
 
 type Props = { params: Promise<{ id: string }> }
 
-export async function PATCH(_request: Request, { params }: Props) {
+async function handleExternalFinalizar(request: Request, { params }: Props) {
+  try {
+    const { id } = await params
+    const result = await plannerConcluirSolicitacao(id, await request.json().catch(() => ({})))
+    return NextResponse.json(result)
+  } catch (error) {
+    if (error instanceof ChecklistError) return NextResponse.json({ error: error.message }, { status: error.status })
+    console.error('[INTEGRATION /api/checklists-validacao-solicitacoes/[id]/finalizar]', error)
+    return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
+  }
+}
+
+async function handleInternalFinalizar({ params }: Props) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
   try {
@@ -46,4 +60,14 @@ export async function PATCH(_request: Request, { params }: Props) {
     console.error('[PATCH /api/checklists-validacao-solicitacoes/[id]/finalizar]', error)
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
   }
+}
+
+export async function PATCH(request: Request, props: Props) {
+  if (isChecklistIntegrationAuthorized(request)) return handleExternalFinalizar(request, props)
+  return handleInternalFinalizar(props)
+}
+
+export async function POST(request: Request, props: Props) {
+  if (isChecklistIntegrationAuthorized(request)) return handleExternalFinalizar(request, props)
+  return handleInternalFinalizar(props)
 }

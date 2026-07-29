@@ -16,6 +16,24 @@ function dateOrNow(value: unknown) {
   return date
 }
 
+function normalizePlannerPayload(payload: any) {
+  const solicitacao = payload?.solicitacao ?? {}
+  const cardPlanner = payload?.card_planner ?? {}
+
+  return {
+    ...payload,
+    planner_task_id: text(payload?.planner_task_id) ?? text(cardPlanner?.planner_task_id) ?? text(cardPlanner?.planner_id),
+    tecnico_nome: text(payload?.tecnico_nome) ?? text(solicitacao?.responsavel_nome),
+    tecnico_email: text(payload?.tecnico_email) ?? text(solicitacao?.responsavel_email),
+    tecnico_codigo_pessoa:
+      text(payload?.tecnico_codigo_pessoa)
+      ?? text(solicitacao?.responsavel_codPessoa)
+      ?? text(solicitacao?.responsavel_codigo_pessoa),
+    atribuido_em: payload?.atribuido_em ?? solicitacao?.atribuido_em,
+    concluido_em: payload?.concluido_em ?? solicitacao?.concluido_em,
+  }
+}
+
 export async function findTecnico(payload: any) {
   const email = text(payload?.tecnico_email)
   const codigo = text(payload?.tecnico_codigo_pessoa)
@@ -36,8 +54,13 @@ export async function findTecnico(payload: any) {
 }
 
 export async function plannerAtribuirSolicitacao(id: string, payload: any) {
+  payload = normalizePlannerPayload(payload)
   const tecnicoNome = text(payload?.tecnico_nome)
-  if (!tecnicoNome) throw new ChecklistError('tecnico_nome é obrigatório')
+  const tecnicoEmail = text(payload?.tecnico_email)
+  const tecnicoCodigo = text(payload?.tecnico_codigo_pessoa)
+  if (!tecnicoNome && !tecnicoEmail && !tecnicoCodigo) {
+    throw new ChecklistError('tecnico_nome, tecnico_email ou tecnico_codigo_pessoa é obrigatório')
+  }
   const atual = await delegate('checklists_validacao_solicitacoes').findUnique({
     where: { id },
     include: { tecnico: true, setor: true, rack: true, _count: { select: { itens: true, diffs: true } } },
@@ -106,6 +129,7 @@ export async function plannerVincularSolicitacao(id: string, payload: any) {
 }
 
 export async function plannerConcluirSolicitacao(id: string, payload: any) {
+  payload = normalizePlannerPayload(payload)
   const atual = await delegate('checklists_validacao_solicitacoes').findUnique({ where: { id }, include: { rack_resposta: true, _count: { select: { itens: true } } } })
   if (!atual) throw new ChecklistError('Solicitação não encontrada', 404)
   const podeFinalizarInterno = atual.tipo_solicitacao === 'SETOR'
