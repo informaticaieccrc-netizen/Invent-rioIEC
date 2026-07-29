@@ -61,12 +61,15 @@ export async function plannerAtribuirSolicitacao(id: string, payload: any) {
   if (!tecnicoNome && !tecnicoEmail && !tecnicoCodigo) {
     throw new ChecklistError('tecnico_nome, tecnico_email ou tecnico_codigo_pessoa é obrigatório')
   }
+  const tecnico = await findTecnico(payload)
+  if (!tecnico?.codigo_pessoa?.trim()) {
+    throw new ChecklistError('Técnico não encontrado ou sem código de pessoa válido no inventário', 403)
+  }
   const atual = await delegate('checklists_validacao_solicitacoes').findUnique({
     where: { id },
     include: { tecnico: true, setor: true, rack: true, _count: { select: { itens: true, diffs: true } } },
   })
   if (!atual) throw new ChecklistError('Solicitação não encontrada', 404)
-  const tecnico = await findTecnico(payload)
   if (atual.assumido_por && tecnico?.id && atual.assumido_por !== tecnico.id) {
     throw new ChecklistError('Solicitação já assumida por outro técnico no inventário', 409)
   }
