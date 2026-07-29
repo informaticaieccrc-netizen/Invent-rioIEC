@@ -68,6 +68,7 @@ function normalizedLink(solicitacao: any) {
 
 function buildCreatePayload(solicitacao: any) {
   const localidade = solicitacao.checklist?.localidade
+  const localidadeNome = text(localidade?.nome)
   const link = normalizedLink(solicitacao)
 
   return {
@@ -76,7 +77,8 @@ function buildCreatePayload(solicitacao: any) {
     checklist: {
       id: solicitacao.checklist?.id ?? solicitacao.checklist_validacao_id,
       nome: text(solicitacao.checklist?.nome),
-      localidade: localidade ? { id: localidade.id, nome: text(localidade.nome) } : null,
+      localidade: localidadeNome,
+      localidade_id: localidade?.id ?? null,
     },
     solicitacao: {
       id: solicitacao.id,
@@ -141,6 +143,13 @@ function extractPlannerId(body: unknown): string | null {
     ?? text(data.id)
     ?? text(data.card_planner?.planner_id)
     ?? text(data.card_planner?.planner_task_id)
+}
+
+function bodyForAudit(body: unknown) {
+  if (body == null) return null
+  if (typeof body === 'string') return body.slice(0, 2000)
+  if (typeof body === 'object') return body as Record<string, unknown>
+  return String(body)
 }
 
 async function postWebhook(url: string | null, payload: unknown): Promise<WebhookResult> {
@@ -228,6 +237,7 @@ async function sendCreateWebhook(solicitacao: any) {
       skipped: Boolean(result.skipped),
       status: result.status ?? null,
       erro: result.error ?? null,
+      resposta: bodyForAudit(result.body),
       planner_task_id: plannerId ?? solicitacao.planner_task_id ?? null,
     },
   })
@@ -282,6 +292,7 @@ export async function notifyChecklistSolicitacaoStatus(
         skipped: Boolean(result.skipped),
         status: result.status ?? null,
         erro: result.error ?? null,
+        resposta: bodyForAudit(result.body),
         responsavel_codPessoa: text(solicitacao.tecnico?.codigo_pessoa),
         planner_task_id: text(solicitacao.planner_task_id),
       },
