@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import {
   ArrowRight,
@@ -12,6 +12,7 @@ import {
   Clock3,
   Filter,
   ListChecks,
+  Loader2,
   MapPin,
   PackageCheck,
   Plus,
@@ -291,6 +292,8 @@ export default function ChecklistsValidacaoPage() {
   const [data, setData] = useState<Checklist[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
+  const [creatingChecklist, setCreatingChecklist] = useState(false)
+  const creatingChecklistRef = useRef(false)
   const [mobileSection, setMobileSection] = useState<MobileChecklistSection>('overview')
   const [nome, setNome] = useState('')
   const [localidadeId, setLocalidadeId] = useState<string | null>(null)
@@ -437,28 +440,39 @@ export default function ChecklistsValidacaoPage() {
 
   async function createChecklist(event: FormEvent) {
     event.preventDefault()
-    const res = await fetch('/api/checklists-validacao', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        nome: nome || defaultName,
-        localidade_id: localidadeId,
-        incluir_racks: incluirRacks,
-        data_inicio: dataInicio || null,
-      }),
-    })
-    if (res.ok) {
-      setShowCreate(false)
-      setMobileSection('checklists')
-      setNome('')
-      await load()
-    } else {
-      const json = await res.json().catch(() => ({}))
-      alert(json.error ?? 'Erro ao criar checklist')
+    if (creatingChecklistRef.current || !localidadeId) return
+
+    creatingChecklistRef.current = true
+    setCreatingChecklist(true)
+
+    try {
+      const res = await fetch('/api/checklists-validacao', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          nome: nome || defaultName,
+          localidade_id: localidadeId,
+          incluir_racks: incluirRacks,
+          data_inicio: dataInicio || null,
+        }),
+      })
+      if (res.ok) {
+        setShowCreate(false)
+        setMobileSection('checklists')
+        setNome('')
+        await load()
+      } else {
+        const json = await res.json().catch(() => ({}))
+        alert(json.error ?? 'Erro ao criar checklist')
+      }
+    } finally {
+      creatingChecklistRef.current = false
+      setCreatingChecklist(false)
     }
   }
 
   function closeCreate() {
+    if (creatingChecklist) return
     setShowCreate(false)
     if (mobileSection === 'criar') setMobileSection('overview')
   }
@@ -473,6 +487,7 @@ export default function ChecklistsValidacaoPage() {
         exit={{ opacity: 0, y: scope === 'mobile' ? 12 : -8 }}
         transition={{ duration: 0.18, ease: 'easeOut' }}
         className="overflow-hidden rounded-3xl border border-blue-200 bg-white shadow-xl shadow-slate-950/5 dark:border-blue-950 dark:bg-slate-900"
+        aria-busy={creatingChecklist}
       >
         <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4 dark:border-slate-800 sm:p-5">
           <div className="min-w-0">
@@ -483,7 +498,8 @@ export default function ChecklistsValidacaoPage() {
           <button
             type="button"
             onClick={closeCreate}
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:text-slate-900 active:scale-95 dark:border-slate-700 dark:text-slate-400 dark:hover:text-white"
+            disabled={creatingChecklist}
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:text-slate-900 active:scale-95 disabled:cursor-not-allowed disabled:opacity-45 dark:border-slate-700 dark:text-slate-400 dark:hover:text-white"
             aria-label="Fechar criação de checklist"
           >
             <X className="h-5 w-5" />
@@ -493,25 +509,28 @@ export default function ChecklistsValidacaoPage() {
         <div className="grid gap-4 p-4 sm:p-5 md:grid-cols-2">
           <label className="space-y-1.5 text-sm font-bold text-slate-700 dark:text-slate-200">
             <span>Nome do ciclo</span>
-            <input value={nome} onChange={event => setNome(event.target.value)} placeholder={defaultName} className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700 dark:bg-slate-950/60" />
+            <input disabled={creatingChecklist} value={nome} onChange={event => setNome(event.target.value)} placeholder={defaultName} className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-500/15 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950/60" />
           </label>
           <label className="space-y-1.5 text-sm font-bold text-slate-700 dark:text-slate-200">
             <span>Localidade</span>
-            <LocalidadeSelect value={localidadeId} onChange={setLocalidadeId} />
+            <div className={creatingChecklist ? 'pointer-events-none opacity-60' : undefined}>
+              <LocalidadeSelect value={localidadeId} onChange={setLocalidadeId} />
+            </div>
           </label>
           <label className="space-y-1.5 text-sm font-bold text-slate-700 dark:text-slate-200">
             <span>Data de início</span>
-            <input type="date" value={dataInicio} onChange={event => setDataInicio(event.target.value)} className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700 dark:bg-slate-950/60" />
+            <input disabled={creatingChecklist} type="date" value={dataInicio} onChange={event => setDataInicio(event.target.value)} className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-500/15 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950/60" />
           </label>
         </div>
 
         <div className="flex flex-col gap-3 border-t border-slate-100 p-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between sm:p-5">
           <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-200">
-            <input type="checkbox" checked={incluirRacks} onChange={event => setIncluirRacks(event.target.checked)} className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+            <input type="checkbox" disabled={creatingChecklist} checked={incluirRacks} onChange={event => setIncluirRacks(event.target.checked)} className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60" />
             Incluir validações de racks
           </label>
-          <button type="submit" disabled={!localidadeId} className="inline-flex h-12 items-center justify-center rounded-2xl bg-blue-600 px-5 text-sm font-black text-white transition hover:bg-blue-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50">
-            Criar checklist
+          <button type="submit" disabled={!localidadeId || creatingChecklist} className="inline-flex h-12 min-w-[170px] items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 text-sm font-black text-white transition hover:bg-blue-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60">
+            {creatingChecklist && <Loader2 className="h-4 w-4 animate-spin" />}
+            {creatingChecklist ? 'Criando...' : 'Criar checklist'}
           </button>
         </div>
       </motion.form>
