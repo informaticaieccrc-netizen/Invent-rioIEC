@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { delegate, ChecklistError } from '@/lib/checklists-validacao'
 import { getAuditSession, registrarAuditoria } from '@/lib/audit'
+import { notifyChecklistSolicitacaoStatus } from '@/lib/checklist/power-automate'
 
 export const runtime = 'nodejs'
 
@@ -31,6 +32,7 @@ export async function PATCH(_request: Request, { params }: Props) {
       usuario_id,
       usuario_nome,
     })
+    await notifyChecklistSolicitacaoStatus(id, 'solicitacao_assumida')
     return NextResponse.json(solicitacao)
   } catch (error) {
     if (error instanceof ChecklistError) return NextResponse.json({ error: error.message }, { status: error.status })

@@ -1,0 +1,292 @@
+import { registrarAuditoria } from '@/lib/audit'
+import { checklistUrl, delegate } from '@/lib/checklists-validacao'
+
+type ChecklistWebhookEvent = 'solicitacao_criada' | 'solicitacao_assumida' | 'solicitacao_finalizada'
+
+type WebhookResult = {
+  ok: boolean
+  skipped?: boolean
+  status?: number
+  body?: unknown
+  error?: string
+}
+
+const CREATE_WEBHOOK_ENV = 'CHECKLIST_POWER_AUTOMATE_CREATE_WEBHOOK_URL'
+const STATUS_WEBHOOK_ENV = 'CHECKLIST_POWER_AUTOMATE_STATUS_WEBHOOK_URL'
+const WEBHOOK_TIMEOUT_MS = 6000
+
+function text(value: unknown) {
+  if (value == null) return null
+  const str = String(value).trim()
+  return str || null
+}
+
+function targetName(solicitacao: any) {
+  return solicitacao.tipo_solicitacao === 'RACK'
+    ? text(solicitacao.rack?.nome_switch) ?? 'Rack'
+    : text(solicitacao.setor?.nome) ?? 'Setor'
+}
+
+function targetPayload(solicitacao: any) {
+  if (solicitacao.tipo_solicitacao === 'RACK') {
+    return {
+      id: solicitacao.rack?.id ?? null,
+      nome: text(solicitacao.rack?.nome_switch),
+      local_fisico: text(solicitacao.rack?.localizacao),
+    }
+  }
+
+  return {
+    id: solicitacao.setor?.id ?? null,
+    nome: text(solicitacao.setor?.nome),
+  }
+}
+
+function checklistItemsFor(tipoSolicitacao: string) {
+  if (tipoSolicitacao === 'RACK') return ['informações gerais', 'portas', 'ocupação']
+  return ['máquinas', 'ramais', 'monitores', 'impressoras']
+}
+
+function bucketFor(tipoSolicitacao: string) {
+  return tipoSolicitacao === 'RACK' ? 'Racks' : 'Setores'
+}
+
+function titleFor(solicitacao: any) {
+  const tipo = solicitacao.tipo_solicitacao === 'RACK' ? 'RACK' : 'SETOR'
+  return `Checklist ${tipo} - ${targetName(solicitacao)}`
+}
+
+function descriptionFor(solicitacao: any) {
+  const checklistName = text(solicitacao.checklist?.nome) ?? 'checklist de validação'
+  const localidadeName = text(solicitacao.checklist?.localidade?.nome) ?? 'localidade'
+  return `Validação presencial do ${checklistName} em ${localidadeName}. O preenchimento deve ser feito no inventário.`
+}
+
+function normalizedLink(solicitacao: any) {
+  return text(solicitacao.link_inventario) ?? checklistUrl(solicitacao.id)
+}
+
+function buildCreatePayload(solicitacao: any) {
+  const localidade = solicitacao.checklist?.localidade
+  const link = normalizedLink(solicitacao)
+
+  return {
+    origem: 'inventario-checklist',
+    evento: 'solicitacao_criada' satisfies ChecklistWebhookEvent,
+    checklist: {
+      id: solicitacao.checklist?.id ?? solicitacao.checklist_validacao_id,
+      nome: text(solicitacao.checklist?.nome),
+      localidade: localidade ? { id: localidade.id, nome: text(localidade.nome) } : null,
+    },
+    solicitacao: {
+      id: solicitacao.id,
+      tipo: solicitacao.tipo_solicitacao,
+      status_interno: solicitacao.status,
+      planner_status: solicitacao.planner_status,
+      responsavel_codPessoa: text(solicitacao.tecnico?.codigo_pessoa),
+      setor: solicitacao.tipo_solicitacao === 'SETOR' ? targetPayload(solicitacao) : null,
+      rack: solicitacao.tipo_solicitacao === 'RACK' ? targetPayload(solicitacao) : null,
+      link_inventario: link,
+    },
+    card_planner: {
+      planner_id: text(solicitacao.planner_task_id),
+      titulo: titleFor(solicitacao),
+      bucket: bucketFor(solicitacao.tipo_solicitacao),
+      descricao: descriptionFor(solicitacao),
+      prioridade: 'normal',
+      checklist_itens: checklistItemsFor(solicitacao.tipo_solicitacao),
+      links: [{ nome: 'Abrir no inventário', url: link }],
+    },
+  }
+}
+
+function buildStatusPayload(solicitacao: any, evento: Exclude<ChecklistWebhookEvent, 'solicitacao_criada'>) {
+  return {
+    origem: 'inventario-checklist',
+    evento,
+    solicitacao: {
+      id: solicitacao.id,
+      tipo: solicitacao.tipo_solicitacao,
+      status_interno: solicitacao.status,
+      planner_status: solicitacao.planner_status,
+      responsavel_codPessoa: text(solicitacao.tecnico?.codigo_pessoa),
+      setor: solicitacao.tipo_solicitacao === 'SETOR' ? targetPayload(solicitacao) : null,
+      rack: solicitacao.tipo_solicitacao === 'RACK' ? targetPayload(solicitacao) : null,
+      link_inventario: normalizedLink(solicitacao),
+    },
+    card_planner: {
+      planner_id: text(solicitacao.planner_task_id),
+    },
+  }
+}
+
+function readWebhookUrl(envName: string) {
+  return text(process.env[envName])
+}
+
+function parseBody(raw: string) {
+  if (!raw) return null
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return raw
+  }
+}
+
+function extractPlannerId(body: unknown): string | null {
+  if (!body || typeof body !== 'object') return null
+  const data = body as Record<string, any>
+  return text(data.planner_id)
+    ?? text(data.planner_task_id)
+    ?? text(data.id)
+    ?? text(data.card_planner?.planner_id)
+    ?? text(data.card_planner?.planner_task_id)
+}
+
+async function postWebhook(url: string | null, payload: unknown): Promise<WebhookResult> {
+  if (!url) return { ok: false, skipped: true, error: 'URL não configurada' }
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT_MS)
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    })
+    const raw = await response.text()
+    return { ok: response.ok, status: response.status, body: parseBody(raw) }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Erro desconhecido'
+    return { ok: false, error: message }
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+async function safeAudit(params: {
+  solicitacaoId: string
+  descricao: string
+  dados_anteriores?: Record<string, unknown> | null
+  dados_novos?: Record<string, unknown> | null
+}) {
+  try {
+    await registrarAuditoria({
+      tabela: 'checklists_validacao_solicitacoes',
+      registro_id: params.solicitacaoId,
+      acao: 'UPDATE',
+      descricao: params.descricao,
+      dados_anteriores: params.dados_anteriores ?? null,
+      dados_novos: params.dados_novos ?? null,
+      usuario_id: null,
+      usuario_nome: 'Power Automate',
+    })
+  } catch (error) {
+    console.warn('[checklist/power-automate] falha ao auditar integração', error)
+  }
+}
+
+async function getSolicitacaoForWebhook(id: string) {
+  return delegate('checklists_validacao_solicitacoes').findUnique({
+    where: { id },
+    include: {
+      checklist: { include: { localidade: { select: { id: true, nome: true } } } },
+      setor: { select: { id: true, nome: true } },
+      rack: { select: { id: true, nome_switch: true, localizacao: true } },
+      tecnico: { select: { id: true, nome: true, codigo_pessoa: true } },
+    },
+  })
+}
+
+async function sendCreateWebhook(solicitacao: any) {
+  const payload = buildCreatePayload(solicitacao)
+  const result = await postWebhook(readWebhookUrl(CREATE_WEBHOOK_ENV), payload)
+  const plannerId = result.ok ? extractPlannerId(result.body) : null
+
+  if (plannerId && !solicitacao.planner_task_id) {
+    await delegate('checklists_validacao_solicitacoes').update({
+      where: { id: solicitacao.id },
+      data: {
+        planner_task_id: plannerId,
+        planner_atualizado_em: new Date(),
+        atualizado_em: new Date(),
+      },
+    })
+  }
+
+  await safeAudit({
+    solicitacaoId: solicitacao.id,
+    descricao: result.ok
+      ? (plannerId ? 'Card Planner criado pelo Power Automate e vinculado ao checklist' : 'Webhook de criação enviado ao Power Automate')
+      : (result.skipped ? 'Webhook de criação não enviado: URL do Power Automate não configurada' : 'Falha ao enviar webhook de criação ao Power Automate'),
+    dados_anteriores: { planner_task_id: solicitacao.planner_task_id },
+    dados_novos: {
+      evento: 'solicitacao_criada',
+      ok: result.ok,
+      skipped: Boolean(result.skipped),
+      status: result.status ?? null,
+      erro: result.error ?? null,
+      planner_task_id: plannerId ?? solicitacao.planner_task_id ?? null,
+    },
+  })
+}
+
+export async function notifyChecklistCreation(checklistId: string) {
+  try {
+    const solicitacoes = await delegate('checklists_validacao_solicitacoes').findMany({
+      where: { checklist_validacao_id: checklistId },
+      include: {
+        checklist: { include: { localidade: { select: { id: true, nome: true } } } },
+        setor: { select: { id: true, nome: true } },
+        rack: { select: { id: true, nome_switch: true, localizacao: true } },
+        tecnico: { select: { id: true, nome: true, codigo_pessoa: true } },
+      },
+    })
+
+    await Promise.allSettled(solicitacoes.map(sendCreateWebhook))
+  } catch (error) {
+    console.warn('[checklist/power-automate] falha geral na notificação de criação', error)
+  }
+}
+
+export async function notifyChecklistSolicitacaoStatus(
+  solicitacaoId: string,
+  evento: Exclude<ChecklistWebhookEvent, 'solicitacao_criada'>,
+) {
+  try {
+    const solicitacao = await getSolicitacaoForWebhook(solicitacaoId)
+    if (!solicitacao) return
+
+    if (!text(solicitacao.planner_task_id)) {
+      await safeAudit({
+        solicitacaoId,
+        descricao: 'Webhook de status não enviado: solicitação sem card Planner vinculado',
+        dados_novos: { evento, motivo: 'planner_task_id ausente' },
+      })
+      return
+    }
+
+    const payload = buildStatusPayload(solicitacao, evento)
+    const result = await postWebhook(readWebhookUrl(STATUS_WEBHOOK_ENV), payload)
+
+    await safeAudit({
+      solicitacaoId,
+      descricao: result.ok
+        ? `Webhook de status ${evento} enviado ao Power Automate`
+        : (result.skipped ? 'Webhook de status não enviado: URL do Power Automate não configurada' : `Falha ao enviar webhook de status ${evento} ao Power Automate`),
+      dados_novos: {
+        evento,
+        ok: result.ok,
+        skipped: Boolean(result.skipped),
+        status: result.status ?? null,
+        erro: result.error ?? null,
+        responsavel_codPessoa: text(solicitacao.tecnico?.codigo_pessoa),
+        planner_task_id: text(solicitacao.planner_task_id),
+      },
+    })
+  } catch (error) {
+    console.warn('[checklist/power-automate] falha geral na notificação de status', error)
+  }
+}
