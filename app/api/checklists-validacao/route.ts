@@ -1,11 +1,18 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions, requireAdmin } from '@/lib/auth'
-import { ChecklistError, createChecklist, delegate } from '@/lib/checklists-validacao'
+import { ChecklistError, createChecklist, delegate, publicAppOrigin } from '@/lib/checklists-validacao'
 import { getAuditSession } from '@/lib/audit'
 import { notifyChecklistCreation } from '@/lib/checklist/power-automate'
 
 export const runtime = 'nodejs'
+
+function originFromRequest(request: Request) {
+  const forwardedHost = request.headers.get('x-forwarded-host') || request.headers.get('host')
+  const forwardedProto = request.headers.get('x-forwarded-proto') || 'https'
+  const forwardedOrigin = forwardedHost ? `${forwardedProto}://${forwardedHost}` : null
+  return publicAppOrigin(forwardedOrigin ?? new URL(request.url).origin)
+}
 
 export async function GET(request: Request) {
   try {
@@ -59,7 +66,7 @@ export async function POST(request: Request) {
       localidade_id: body?.localidade_id,
       incluir_racks: Boolean(body?.incluir_racks),
       data_inicio: body?.data_inicio ?? null,
-      origin: new URL(request.url).origin,
+      origin: originFromRequest(request),
       user: { id: usuario_id, nome: usuario_nome },
     })
     await notifyChecklistCreation(checklist.id)

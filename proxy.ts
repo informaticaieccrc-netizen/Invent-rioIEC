@@ -12,6 +12,11 @@ const CHECKLIST_EXTERNAL_PATHS = [
   /^\/api\/checklist(?:\/.*)?$/,
 ]
 
+const CHECKLIST_INTERNAL_INTEGRATION_PATHS = [
+  /^\/api\/checklists-validacao-solicitacoes\/[^/]+\/assumir$/,
+  /^\/api\/checklists-validacao-solicitacoes\/[^/]+\/finalizar$/,
+]
+
 function hasSnowIntegrationToken(req: Request) {
   const expected = process.env.SNOW_INTEGRATION_TOKEN?.trim()
   if (!expected) return false
@@ -21,6 +26,21 @@ function hasSnowIntegrationToken(req: Request) {
   const bearer = authorization.match(/^Bearer\s+(.+)$/i)?.[1]?.trim()
 
   return bearer === expected || apiKey === expected
+}
+
+function hasChecklistIntegrationToken(req: Request) {
+  const expected = process.env.CHECKLIST_INTEGRATION_TOKEN?.trim()
+  if (!expected) return false
+
+  const authorization = req.headers.get('authorization') || ''
+  const apiKey = req.headers.get('x-api-key')?.trim() || ''
+  const bearer = authorization.match(/^Bearer\s+(.+)$/i)?.[1]?.trim()
+
+  return bearer === expected || apiKey === expected
+}
+
+function hasChecklistIntegrationCredential(req: Request) {
+  return Boolean(req.headers.get('authorization') || req.headers.get('x-api-key'))
 }
 
 export async function proxy(req: NextRequest) {
@@ -39,6 +59,16 @@ export async function proxy(req: NextRequest) {
     // /api/checklist serve o Swagger e os callbacks externos. Os handlers validam
     // CHECKLIST_INTEGRATION_TOKEN e retornam 401 JSON, sem redirect para /login.
     return NextResponse.next()
+  }
+
+  if (CHECKLIST_INTERNAL_INTEGRATION_PATHS.some(pattern => pattern.test(pathname))) {
+    if (hasChecklistIntegrationToken(req)) return NextResponse.next()
+    if (hasChecklistIntegrationCredential(req)) {
+      return NextResponse.json(
+        { error: 'Token de integração Checklist inválido' },
+        { status: 401 }
+      )
+    }
   }
 
   const token = await getToken({
