@@ -59,7 +59,26 @@ function titleFor(solicitacao: any) {
 function descriptionFor(solicitacao: any) {
   const checklistName = text(solicitacao.checklist?.nome) ?? 'checklist de validação'
   const localidadeName = text(solicitacao.checklist?.localidade?.nome) ?? 'localidade'
-  return `Validação presencial do ${checklistName} em ${localidadeName}. O preenchimento deve ser feito no inventário.`
+  const alvo = targetName(solicitacao)
+
+  if (solicitacao.tipo_solicitacao === 'RACK') {
+    return [
+      `Checklist: ${checklistName}.`,
+      `Solicitação: Rack ${alvo}.`,
+      `Localidade: ${localidadeName}.`,
+      'Realizar a contagem e validação das portas do rack, conferindo ocupação, funcionalidade e usos.',
+      'O preenchimento deve ser feito no inventário.',
+    ].join(' ')
+  }
+
+  return [
+    `Checklist: ${checklistName}.`,
+    `Solicitação: Setor ${alvo}.`,
+    `Localidade: ${localidadeName}.`,
+    'Revisar as estações de trabalho, incluindo máquinas, ramais, monitores e colaboradores vinculados.',
+    'Também revisar os ativos setoriais independentes, como impressoras.',
+    'O preenchimento deve ser feito no inventário.',
+  ].join(' ')
 }
 
 function normalizedLink(solicitacao: any) {
