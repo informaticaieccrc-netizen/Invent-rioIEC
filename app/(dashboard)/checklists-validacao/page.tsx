@@ -7,6 +7,7 @@ import {
   ArrowRight,
   CalendarCheck,
   CheckCircle2,
+  ChevronDown,
   ClipboardCheck,
   Clock3,
   Filter,
@@ -42,9 +43,9 @@ type StatusFilter = 'todos' | 'abertos' | 'finalizados'
 type MobileChecklistSection = 'overview' | 'criar' | 'checklists'
 
 const periodOptions: Array<{ label: string; value: PeriodFilter }> = [
-  { label: 'Todos', value: 'todos' },
+  { label: 'Todo o período', value: 'todos' },
   { label: 'Este mês', value: 'mes' },
-  { label: '90 dias', value: 'trimestre' },
+  { label: 'Últimos 90 dias', value: 'trimestre' },
   { label: 'Este ano', value: 'ano' },
 ]
 
@@ -134,28 +135,36 @@ function CycleProgress({ percent }: { percent: number }) {
 }
 
 function SelectFilter({
+  icon: Icon,
   label,
   onChange,
   options,
   value,
 }: {
+  icon?: LucideIcon
   label: string
   onChange: (value: string) => void
   options: Array<{ label: string; value: string }>
   value: string
 }) {
   return (
-    <label className="min-w-0 space-y-1">
-      <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</span>
-      <select
-        value={value}
-        onChange={event => onChange(event.target.value)}
-        className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-200"
-      >
-        {options.map(option => (
-          <option key={option.value} value={option.value}>{option.label}</option>
-        ))}
-      </select>
+    <label className="min-w-0 space-y-2">
+      <span className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">
+        {Icon && <Icon className="h-3.5 w-3.5 shrink-0 text-blue-500" />}
+        {label}
+      </span>
+      <span className="relative block">
+        <select
+          value={value}
+          onChange={event => onChange(event.target.value)}
+          className="h-14 w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 pr-11 text-sm font-black text-slate-800 outline-none transition hover:border-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-950/70 dark:text-slate-100 dark:hover:border-slate-700"
+        >
+          {options.map(option => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+        <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+      </span>
     </label>
   )
 }
@@ -170,7 +179,7 @@ function SegmentedFilter<T extends string>({
   value: T
 }) {
   return (
-    <div className="grid rounded-2xl border border-slate-200 bg-slate-100 p-1 dark:border-slate-800 dark:bg-slate-950/70" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
+    <div className="grid h-14 rounded-2xl border border-slate-200 bg-slate-100 p-1.5 dark:border-slate-800 dark:bg-slate-950/70" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
       {options.map(option => {
         const active = option.value === value
         return (
@@ -178,14 +187,14 @@ function SegmentedFilter<T extends string>({
             key={option.value}
             type="button"
             onClick={() => onChange(option.value)}
-            className={`relative h-10 rounded-xl px-2 text-xs font-bold transition active:scale-95 sm:text-sm ${
+            className={`relative min-w-0 rounded-xl px-3 text-sm font-black transition active:scale-95 ${
               active ? 'text-blue-700 dark:text-blue-200' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
             }`}
           >
             {active && (
               <motion.span
                 layoutId="checklist-status-filter"
-                className="absolute inset-0 rounded-xl bg-white shadow-sm dark:bg-slate-800"
+                className="absolute inset-0 rounded-xl bg-white shadow-sm dark:bg-slate-800/95"
                 transition={{ duration: 0.18, ease: 'easeOut' }}
               />
             )}
@@ -385,8 +394,9 @@ export default function ChecklistsValidacaoPage() {
   ]
 
   const filterActions = (
-    <div className="grid w-full gap-3 xl:w-[680px] xl:grid-cols-[1fr_1fr_1.2fr]">
+    <div className="grid w-full items-end gap-4 lg:grid-cols-[minmax(220px,1fr)_minmax(180px,0.78fr)_minmax(280px,0.95fr)] xl:w-[860px]">
       <SelectFilter
+        icon={MapPin}
         label="Localidade"
         value={localidadeFilter}
         onChange={setLocalidadeFilter}
@@ -396,14 +406,15 @@ export default function ChecklistsValidacaoPage() {
         ]}
       />
       <SelectFilter
-        label="Tempo"
+        icon={CalendarCheck}
+        label="Período"
         value={periodFilter}
         onChange={value => setPeriodFilter(value as PeriodFilter)}
         options={periodOptions}
       />
-      <label className="min-w-0 space-y-1">
-        <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">
-          <SlidersHorizontal className="h-3.5 w-3.5" />
+      <label className="min-w-0 space-y-2">
+        <span className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">
+          <SlidersHorizontal className="h-3.5 w-3.5 shrink-0 text-blue-500" />
           Status
         </span>
         <SegmentedFilter value={statusFilter} onChange={setStatusFilter} options={statusOptions} />
