@@ -6,6 +6,7 @@ import { getAuditSession, registrarAuditoria } from '@/lib/audit'
 import { notifyChecklistSolicitacaoStatus } from '@/lib/checklist/power-automate'
 import { isChecklistIntegrationAuthorized } from '@/lib/checklist/auth'
 import { plannerAtribuirSolicitacao } from '@/lib/checklist/planner'
+import { ensureChecklistTecnicoApto } from '@/lib/checklist/tecnico'
 
 export const runtime = 'nodejs'
 
@@ -29,6 +30,7 @@ async function handleInternalAssumir({ params }: Props) {
   try {
     const { id } = await params
     const { usuario_id, usuario_nome } = await getAuditSession()
+    await ensureChecklistTecnicoApto(usuario_id)
     const atual = await delegate('checklists_validacao_solicitacoes').findUnique({ where: { id } })
     if (!atual) throw new ChecklistError('Solicitação não encontrada', 404)
     if (atual.assumido_por && atual.assumido_por !== usuario_id) throw new ChecklistError('Solicitação já assumida por outro técnico', 409)

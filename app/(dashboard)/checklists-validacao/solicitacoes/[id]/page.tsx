@@ -52,6 +52,7 @@ type Solicitacao = {
   assumida_pelo_usuario?: boolean
   assumida_por_outro?: boolean
   pode_assumir?: boolean
+  bloqueio_assumir?: string | null
   pode_editar?: boolean
   pode_finalizar?: boolean
   pode_reabrir?: boolean
@@ -503,6 +504,7 @@ function ActionButton({
   disabled = false,
   icon: Icon,
   onClick,
+  title,
   tone = 'secondary',
   type = 'button',
 }: {
@@ -510,6 +512,7 @@ function ActionButton({
   disabled?: boolean
   icon?: LucideIcon
   onClick?: () => void
+  title?: string
   tone?: 'primary' | 'secondary' | 'success'
   type?: 'button' | 'submit'
 }) {
@@ -518,6 +521,7 @@ function ActionButton({
       type={type}
       disabled={disabled}
       onClick={onClick}
+      title={title}
       className={`inline-flex h-11 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition active:scale-[0.99] disabled:opacity-50 sm:h-10 ${
         tone === 'primary'
           ? 'bg-blue-600 text-white shadow-sm shadow-blue-950/20 hover:bg-blue-500'
@@ -1098,7 +1102,9 @@ export default function ChecklistSolicitacaoPage() {
       ? 'Assumida por outro'
       : isClosed
         ? 'Encerrada'
-        : 'Assumir'
+        : data.bloqueio_assumir
+          ? 'Sem código de pessoa'
+          : 'Assumir'
   const canAssume = Boolean(data.pode_assumir)
   const solicitationOverviewMetrics: ChecklistContextMetric[] = coverageRows.map(row => ({
     icon: row.icon,
@@ -1142,6 +1148,7 @@ export default function ChecklistSolicitacaoPage() {
         <div className="grid grid-cols-2 gap-2 sm:flex sm:w-auto">
           <ActionButton
             disabled={!canAssume || actionLoading === 'assumir'}
+            title={data.bloqueio_assumir ?? undefined}
             icon={actionLoading === 'assumir' ? Loader2 : data.assumida_pelo_usuario ? CheckCircle2 : UserCheck}
             onClick={canAssume ? () => action(`/api/checklists-validacao-solicitacoes/${params.id}/assumir`, 'PATCH', undefined, 'Solicitação assumida', 'assumir') : undefined}
             tone={canAssume ? 'primary' : data.assumida_pelo_usuario ? 'success' : 'secondary'}

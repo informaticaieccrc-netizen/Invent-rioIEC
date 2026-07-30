@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { randomUUID } from 'crypto'
 import { authOptions, isPrivilegedProfile } from '@/lib/auth'
+import { getChecklistTecnicoApto } from '@/lib/checklist/tecnico'
 import { getAuditSession, registrarAuditoria } from '@/lib/audit'
 import { calcularCoberturaSolicitacao, delegate, enrichSolicitacaoForReview, getSolicitacaoAssimilationAudit, sanitizeSolicitacao } from '@/lib/checklists-validacao'
 import { prisma } from '@/lib/prisma'
@@ -87,13 +88,14 @@ export async function GET(request: Request, { params }: Props) {
     ])
     const user = session.user as { id?: string | null; perfil?: string | null }
     const isAdmin = isPrivilegedProfile(user.perfil)
+    const tecnicoApto = await getChecklistTecnicoApto(user.id)
     const assimilada = Boolean(assimilacaoAudit)
     const pode_editar = ['aberta', 'assumida'].includes(solicitacao.status)
       && (isAdmin || (!!solicitacao.assumido_por && solicitacao.assumido_por === user.id))
     const assumida_pelo_usuario = !!solicitacao.assumido_por && solicitacao.assumido_por === user.id
     const assumida_por_outro = !!solicitacao.assumido_por && solicitacao.assumido_por !== user.id
-    const pode_assumir = !solicitacao.assumido_por && solicitacao.status === 'aberta'
-    const pode_finalizar = ['aberta', 'assumida'].includes(solicitacao.status) && (isAdmin || assumida_pelo_usuario || !solicitacao.assumido_por)
+    const pode_assumir = Boolean(tecnicoApto) && !solicitacao.assumido_por && solicitacao.status === 'aberta'
+    const pode_finalizar = ['aberta', 'assumida'].includes(solicitacao.status) && (isAdmin || assumida_pelo_usuario || (!solicitacao.assumido_por && Boolean(tecnicoApto)))
     const pode_reabrir = !assimilada && ['finalizada', 'revisada'].includes(solicitacao.status) && (isAdmin || assumida_pelo_usuario)
     const payload = {
       ...solicitacao,
@@ -105,6 +107,7 @@ export async function GET(request: Request, { params }: Props) {
       assumida_por_outro,
       cobertura,
       pode_assumir,
+      bloqueio_assumir: !tecnicoApto ? 'Usuário sem código de pessoa válido para assumir checklist.' : null,
       pode_editar,
       pode_finalizar,
       pode_reabrir,

@@ -6,6 +6,7 @@ import { getAuditSession, registrarAuditoria } from '@/lib/audit'
 import { notifyChecklistSolicitacaoStatus } from '@/lib/checklist/power-automate'
 import { isChecklistIntegrationAuthorized } from '@/lib/checklist/auth'
 import { plannerConcluirSolicitacao } from '@/lib/checklist/planner'
+import { ensureChecklistTecnicoApto } from '@/lib/checklist/tecnico'
 
 export const runtime = 'nodejs'
 
@@ -34,6 +35,7 @@ async function handleInternalFinalizar({ params }: Props) {
     if (atual.tipo_solicitacao === 'SETOR') await gerarDiffSolicitacao(id)
     const now = new Date()
     const shouldAssignOnFinish = !atual.assumido_por && Boolean(usuario_id)
+    if (shouldAssignOnFinish) await ensureChecklistTecnicoApto(usuario_id)
     const solicitacao = await delegate('checklists_validacao_solicitacoes').update({
       where: { id },
       data: {
