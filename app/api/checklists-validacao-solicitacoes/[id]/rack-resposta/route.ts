@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions, isPrivilegedProfile } from '@/lib/auth'
-import { ChecklistError, delegate, ensureSolicitacaoEditable } from '@/lib/checklists-validacao'
+import { ChecklistError, delegate, ensureSolicitacaoFillable } from '@/lib/checklists-validacao'
 import { getAuditSession } from '@/lib/audit'
 
 export const runtime = 'nodejs'
@@ -23,7 +23,7 @@ export async function POST(request: Request, { params }: Props) {
     const { id } = await params
     const body = await request.json()
     const { usuario_id, usuario_nome } = await getAuditSession()
-    const solicitacao = await ensureSolicitacaoEditable(id, { id: usuario_id, nome: usuario_nome }, isPrivilegedProfile((session.user as any)?.perfil))
+    const solicitacao = await ensureSolicitacaoFillable(id, { id: usuario_id, nome: usuario_nome }, isPrivilegedProfile((session.user as any)?.perfil))
     if (solicitacao.tipo_solicitacao !== 'RACK') throw new ChecklistError('Resposta permitida apenas para solicitação de rack')
     const data = await delegate('checklists_validacao_racks_respostas').upsert({
       where: { checklist_validacao_solicitacao_id: id },

@@ -12,14 +12,77 @@ export const runtime = 'nodejs'
 
 type Props = { params: Promise<{ id: string }> }
 
+function tokenSource(request: Request) {
+  if (request.headers.get('authorization')?.toLowerCase().startsWith('bearer ')) return 'bearer'
+  if (request.headers.get('x-api-key')) return 'x-api-key'
+  return 'none'
+}
+
+function maskCode(value: unknown) {
+  if (value == null) return null
+  const text = String(value).trim()
+  if (!text) return null
+  return `***${text.slice(-4)}`
+}
+
+function payloadSummary(payload: any) {
+  const solicitacao = payload?.solicitacao ?? {}
+  const cardPlanner = payload?.card_planner ?? {}
+  return {
+    keys: payload && typeof payload === 'object' ? Object.keys(payload) : [],
+    has_planner_task_id: Boolean(payload?.planner_task_id ?? cardPlanner?.planner_task_id ?? cardPlanner?.planner_id),
+    has_tecnico_nome: Boolean(payload?.tecnico_nome ?? solicitacao?.responsavel_nome),
+    has_tecnico_email: Boolean(payload?.tecnico_email ?? solicitacao?.responsavel_email),
+    tecnico_codigo_pessoa: maskCode(payload?.tecnico_codigo_pessoa ?? solicitacao?.responsavel_codPessoa ?? solicitacao?.responsavel_codigo_pessoa),
+    atribuido_em: payload?.atribuido_em ?? solicitacao?.atribuido_em ?? null,
+  }
+}
+
+function logIntegration(event: string, details: Record<string, unknown>, level: 'info' | 'warn' | 'error' = 'info') {
+  const line = JSON.stringify({
+    scope: 'checklist.integration',
+    route: 'checklists-validacao-solicitacoes.assumir',
+    event,
+    ...details,
+  })
+  if (level === 'error') console.error(line)
+  else if (level === 'warn') console.warn(line)
+  else console.log(line)
+}
+
 async function handleExternalAssumir(request: Request, { params }: Props) {
+  const { id } = await params
+  const payload = await request.json().catch(() => ({}))
+  const requestId = request.headers.get('x-vercel-id') ?? request.headers.get('x-ms-correlation-id') ?? null
+  logIntegration('received', {
+    solicitacao_id: id,
+    method: request.method,
+    request_id: requestId,
+    auth: tokenSource(request),
+    payload: payloadSummary(payload),
+  })
   try {
-    const { id } = await params
-    const result = await plannerAtribuirSolicitacao(id, await request.json().catch(() => ({})))
+    const result = await plannerAtribuirSolicitacao(id, payload)
+    logIntegration('success', {
+      solicitacao_id: id,
+      request_id: requestId,
+      status: result.status,
+      planner_status: result.planner_status,
+      has_planner_task_id: Boolean(result.planner_task_id),
+    })
     return NextResponse.json(result)
   } catch (error) {
-    if (error instanceof ChecklistError) return NextResponse.json({ error: error.message }, { status: error.status })
-    console.error('[INTEGRATION /api/checklists-validacao-solicitacoes/[id]/assumir]', error)
+    if (error instanceof ChecklistError) {
+      logIntegration('rejected', {
+        solicitacao_id: id,
+        request_id: requestId,
+        status: error.status,
+        error: error.message,
+        payload: payloadSummary(payload),
+      }, 'warn')
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+    logIntegration('failed', { solicitacao_id: id, request_id: requestId, error }, 'error')
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
   }
 }

@@ -13,6 +13,8 @@ const CHECKLIST_EXTERNAL_PATHS = [
 ]
 
 const CHECKLIST_INTERNAL_INTEGRATION_PATHS = [
+  /^\/api\/checklists-validacao-solicitacoes\/assumir$/,
+  /^\/api\/checklists-validacao-solicitacoes\/finalizar$/,
   /^\/api\/checklists-validacao-solicitacoes\/[^/]+\/assumir$/,
   /^\/api\/checklists-validacao-solicitacoes\/[^/]+\/finalizar$/,
 ]
