@@ -401,7 +401,7 @@ type ChecklistItemRow = Record<string, unknown> & {
   identificador_informado: string | null
   dados_informados_json: Record<string, unknown> | null
   status_revisao?: string | null
-  diffs?: Array<{ status_revisao: string }>
+  diffs?: Array<{ id: string; status_revisao: string }>
 }
 
 function pushAudit(audits: AuditEntry[], entry: AuditEntry) {
