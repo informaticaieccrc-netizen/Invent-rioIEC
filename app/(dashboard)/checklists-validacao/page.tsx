@@ -306,7 +306,11 @@ export default function ChecklistsValidacaoPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/checklists-validacao?limit=100')
+      const res = await fetch('/api/checklists-validacao?limit=100', { cache: 'no-store' })
+      if (!res.ok) {
+        setData([])
+        return
+      }
       const json = await res.json()
       setData(Array.isArray(json.data) ? json.data : [])
     } finally {

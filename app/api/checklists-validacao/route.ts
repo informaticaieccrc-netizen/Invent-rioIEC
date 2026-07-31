@@ -6,6 +6,8 @@ import { getAuditSession } from '@/lib/audit'
 import { notifyChecklistCreation } from '@/lib/checklist/power-automate'
 
 export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 function originFromRequest(request: Request) {
   const forwardedHost = request.headers.get('x-forwarded-host') || request.headers.get('host')
@@ -48,6 +50,10 @@ export async function GET(request: Request) {
       total,
       page,
       totalPages: Math.ceil(total / limit),
+    }, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+      },
     })
   } catch (error) {
     console.error('[GET /api/checklists-validacao]', error)

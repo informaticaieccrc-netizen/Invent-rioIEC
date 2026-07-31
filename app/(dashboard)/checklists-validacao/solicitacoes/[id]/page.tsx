@@ -26,6 +26,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
+import { toast } from 'sonner'
 import { ChecklistNavPills } from '@/components/checklists/checklist-nav-pills'
 import { ChecklistMobileBottomNav } from '@/components/checklists/checklist-mobile-bottom-nav'
 import { ChecklistContextOverview, type ChecklistContextMetric } from '@/components/checklists/checklist-context-overview'
@@ -718,8 +719,11 @@ export default function ChecklistSolicitacaoPage() {
     setActionLoading(loadingKey)
     try {
       const res = await fetch(url, { method, headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
-      if (!res.ok) alert((await res.json().catch(() => ({}))).error ?? 'Erro na operação')
-      else if (successMessage) showCelebration(successMessage)
+      if (!res.ok) {
+        toast.error((await res.json().catch(() => ({}))).error ?? 'Erro na operação')
+        return
+      }
+      if (successMessage) showCelebration(successMessage)
       await load()
     } finally {
       setActionLoading(null)
@@ -737,7 +741,7 @@ export default function ChecklistSolicitacaoPage() {
         body: JSON.stringify({ decisao: 'comentar', comentario }),
       })
       if (!res.ok) {
-        alert((await res.json().catch(() => ({}))).error ?? 'Erro ao enviar comentário')
+        toast.error((await res.json().catch(() => ({}))).error ?? 'Erro ao enviar comentário')
         return
       }
       setCommentDraft('')
@@ -761,7 +765,33 @@ export default function ChecklistSolicitacaoPage() {
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'Erro ao remover item')
   }
 
+  function canEditSolicitation() {
+    if (data?.pode_editar) return true
+
+    if (data?.assumida_por_outro) {
+      toast.warning('Solicitação assumida por outro técnico', {
+        description: data.tecnico_nome
+          ? `Responsável atual: ${data.tecnico_nome}. Apenas essa pessoa pode preencher.`
+          : 'Apenas o técnico responsável pode preencher esta solicitação.',
+      })
+      return false
+    }
+
+    if (data?.status === 'finalizada' || data?.status === 'revisada') {
+      toast.warning('Solicitação finalizada', {
+        description: 'Reabra a solicitação antes de alterar o preenchimento.',
+      })
+      return false
+    }
+
+    toast.warning('Assuma a solicitação para preencher', {
+      description: 'O preenchimento só fica disponível para o técnico responsável.',
+    })
+    return false
+  }
+
   function openModal(mode: Exclude<ModalMode, null>) {
+    if (!canEditSolicitation()) return
     setEditingItemId(null)
     setEditingRamalItemId(null)
     setEditingMonitorItemIds([])
@@ -771,6 +801,7 @@ export default function ChecklistSolicitacaoPage() {
   }
 
   function openEditStation(item: Item) {
+    if (!canEditSolicitation()) return
     const dados = item.dados_informados_json ?? {}
     const stationRef = stationRefForItem(item)
     const relatedRamais = itemsByType.RAMAL.filter(related => stationRefForItem(related) === stationRef)
@@ -838,6 +869,7 @@ export default function ChecklistSolicitacaoPage() {
   }
 
   function openEditPrinter(item: Item) {
+    if (!canEditSolicitation()) return
     const dados = item.dados_informados_json ?? {}
     setEditingItemId(item.id)
     setPrinterForm({
@@ -887,8 +919,8 @@ export default function ChecklistSolicitacaoPage() {
     setSemRamal(false)
   }
 
-  async function saveStation(event: FormEvent) {
-    event.preventDefault()
+  async function saveStation(event?: FormEvent, forceEmptyStation = false) {
+    event?.preventDefault()
     setSaving(true)
     try {
       const isEditing = Boolean(editingItemId)
@@ -902,12 +934,20 @@ export default function ChecklistSolicitacaoPage() {
         stationForm[`monitor_${index}_marca`],
         stationForm[`monitor_${index}_tamanho`],
       ]))
-      if (!hasColaboradorVinculo && !hasRamalVinculo && !hasMonitorVinculo) {
-        const confirmed = window.confirm('Esta estação será enviada sem colaborador, ramal ou monitor vinculado. Confirma o envio mesmo assim?')
-        if (!confirmed) {
-          setSaving(false)
-          return
-        }
+      if (!hasColaboradorVinculo && !hasRamalVinculo && !forceEmptyStation) {
+        setSaving(false)
+        toast.warning('Enviar estação sem vínculos?', {
+          description: hasMonitorVinculo
+            ? 'A estação possui monitor, mas nenhum colaborador ou ramal foi informado.'
+            : 'Nenhum colaborador, ramal ou monitor foi informado para esta estação.',
+          action: {
+            label: 'Enviar',
+            onClick: () => {
+              void saveStation(undefined, true)
+            },
+          },
+        })
+        return
       }
       const maquina = cleanForm({
         patrimonio: stationForm.patrimonio,
@@ -970,7 +1010,7 @@ export default function ChecklistSolicitacaoPage() {
       showCelebration(isEditing ? 'Estação e vínculos atualizados' : 'Preenchimento enviado')
       await load()
     } catch (error) {
-      alert(error instanceof Error ? error.message : 'Erro ao salvar estação')
+      toast.error(error instanceof Error ? error.message : 'Erro ao salvar estação')
     } finally {
       setSaving(false)
     }
@@ -987,7 +1027,7 @@ export default function ChecklistSolicitacaoPage() {
       showCelebration(editingItemId ? 'Impressora atualizada' : 'Impressora enviada')
       await load()
     } catch (error) {
-      alert(error instanceof Error ? error.message : 'Erro ao salvar impressora')
+      toast.error(error instanceof Error ? error.message : 'Erro ao salvar impressora')
     } finally {
       setSaving(false)
     }
@@ -1020,7 +1060,7 @@ export default function ChecklistSolicitacaoPage() {
       showCelebration('Validação do rack salva')
       void load()
     } catch (error) {
-      alert(error instanceof Error ? error.message : 'Erro ao salvar rack')
+      toast.error(error instanceof Error ? error.message : 'Erro ao salvar rack')
     } finally {
       setSaving(false)
     }

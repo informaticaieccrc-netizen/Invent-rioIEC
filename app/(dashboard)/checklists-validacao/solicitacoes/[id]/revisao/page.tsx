@@ -1136,6 +1136,8 @@ export default function ChecklistSolicitacaoRevisaoPage() {
   const reviewedDiffs = diffs.filter(diff => diff.status_revisao === 'aprovado' || diff.status_revisao === 'recusado').length
   const approvedDiffs = diffs.filter(diff => diff.status_revisao === 'aprovado').length
   const refusedDiffs = diffs.filter(diff => diff.status_revisao === 'recusado').length
+  const pendingDiffs = Math.max(0, diffs.length - reviewedDiffs)
+  const allItemsApproved = data.tipo_solicitacao !== 'RACK' && data.itens.length > 0 && data.itens.every(item => item.status_revisao === 'aprovado')
   const rackReviewed = data.status_revisao === 'aprovado' || data.status_revisao === 'recusado'
   const reviewOverviewMetrics: ChecklistContextMetric[] = data.tipo_solicitacao === 'RACK'
     ? [
@@ -1374,7 +1376,7 @@ export default function ChecklistSolicitacaoRevisaoPage() {
               </div>
               <div className="flex items-center justify-between rounded-2xl bg-slate-950/70 px-4 py-3">
                 <span className="text-slate-400">Pendentes</span>
-                <strong className="text-amber-300">{Math.max(0, diffs.length - reviewedDiffs)}</strong>
+                <strong className="text-amber-300">{pendingDiffs}</strong>
               </div>
             </div>
             {data.revisor_nome && (
@@ -1387,11 +1389,19 @@ export default function ChecklistSolicitacaoRevisaoPage() {
                 Assimilado por {data.assimilado_por_nome ?? 'administrador'} em {formatDateTime(data.assimilado_em)}
               </div>
             )}
+            <button disabled={!canReview || data.itens.length === 0 || allItemsApproved || Boolean(operation)} onClick={() => action(`/api/checklists-validacao-solicitacoes/${params.id}/aprovar-tudo`, 'POST', undefined, {
+              loading: 'Aprovando todos os ativos enviados...',
+              success: 'Todos os ativos enviados foram aprovados.',
+              key: 'aprovar-tudo',
+            })} className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm font-bold text-emerald-100 transition hover:border-emerald-400 hover:bg-emerald-500/15 disabled:cursor-not-allowed disabled:opacity-45">
+              {operation === 'aprovar-tudo' ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              Aprovar tudo
+            </button>
             <button disabled={!canReview || approvedDiffs === 0 || Boolean(operation)} onClick={() => action(`/api/checklists-validacao-solicitacoes/${params.id}/assimilar`, 'POST', undefined, {
               loading: 'Assimilando mudanças e gerando auditorias...',
               success: 'Mudanças aceitas no inventário e auditadas.',
               key: 'assimilar',
-            })} className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-45">
+            })} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-45">
               {operation === 'assimilar' && <Loader2 className="h-4 w-4 animate-spin" />}
               Assimilar aprovados
             </button>
@@ -1400,7 +1410,7 @@ export default function ChecklistSolicitacaoRevisaoPage() {
       )}
 
       <AnimatePresence>
-        {(redirecting || operation === 'assimilar' || operation === 'rack-assimilate') && (
+        {(redirecting || operation === 'assimilar' || operation === 'rack-assimilate' || operation === 'aprovar-tudo') && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -1415,10 +1425,12 @@ export default function ChecklistSolicitacaoRevisaoPage() {
               className="w-full max-w-md rounded-3xl border border-emerald-500/25 bg-slate-900 p-6 text-center shadow-2xl shadow-slate-950/40"
             >
               <Loader2 className="mx-auto h-8 w-8 animate-spin text-emerald-300" />
-              <h2 className="mt-4 text-lg font-black text-white">{redirecting ? 'Abrindo preenchimento' : 'Assimilando no inventário'}</h2>
+              <h2 className="mt-4 text-lg font-black text-white">{redirecting ? 'Abrindo preenchimento' : operation === 'aprovar-tudo' ? 'Aprovando revisão' : 'Assimilando no inventário'}</h2>
               <p className="mt-2 text-sm leading-6 text-slate-400">
                 {redirecting
                   ? 'Carregando a tela operacional da solicitação.'
+                  : operation === 'aprovar-tudo'
+                    ? 'Marcando todos os ativos e campos enviados como aprovados.'
                   : 'Aplicando mudanças aprovadas e registrando auditorias individuais.'}
               </p>
             </motion.div>

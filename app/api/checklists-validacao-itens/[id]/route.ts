@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions, isPrivilegedProfile } from '@/lib/auth'
-import { ChecklistError, delegate, ensureSolicitacaoEditable, upsertChecklistItem } from '@/lib/checklists-validacao'
+import { ChecklistError, delegate, ensureSolicitacaoFillable, upsertChecklistItem } from '@/lib/checklists-validacao'
 import { getAuditSession, registrarAuditoria } from '@/lib/audit'
 
 export const runtime = 'nodejs'
@@ -41,7 +41,7 @@ export async function DELETE(_request: Request, { params }: Props) {
     const current = await delegate('checklists_validacao_itens').findUnique({ where: { id } })
     if (!current) throw new ChecklistError('Item não encontrado', 404)
     const { usuario_id, usuario_nome } = await getAuditSession()
-    await ensureSolicitacaoEditable(
+    await ensureSolicitacaoFillable(
       current.checklist_validacao_solicitacao_id,
       { id: usuario_id, nome: usuario_nome },
       isPrivilegedProfile((session.user as any)?.perfil)

@@ -145,6 +145,16 @@ export async function ensureSolicitacaoEditable(id: string, user: UserRef, isAdm
   return solicitacao
 }
 
+export async function ensureSolicitacaoFillable(id: string, user: UserRef, isAdmin = false) {
+  const solicitacao = await ensureSolicitacaoEditable(id, user, isAdmin)
+  if (!isAdmin) {
+    if (!user.id) throw new ChecklistError('Usuário não identificado para preenchimento', 401)
+    if (!solicitacao.assumido_por) throw new ChecklistError('Solicitação precisa ser assumida antes do preenchimento', 409)
+    if (solicitacao.assumido_por !== user.id) throw new ChecklistError('Solicitação assumida por outro técnico', 409)
+  }
+  return solicitacao
+}
+
 export async function ensureSolicitacaoRevisable(id: string) {
   const solicitacao = await delegate('checklists_validacao_solicitacoes').findUnique({ where: { id } })
   if (!solicitacao) throw new ChecklistError('Solicitação não encontrada', 404)
@@ -391,7 +401,7 @@ type ChecklistItemRow = Record<string, unknown> & {
   identificador_informado: string | null
   dados_informados_json: Record<string, unknown> | null
   status_revisao?: string | null
-  diffs?: Array<{ status_revisao: string }>
+  diffs?: Array<{ id: string; status_revisao: string }>
 }
 
 function pushAudit(audits: AuditEntry[], entry: AuditEntry) {
@@ -569,7 +579,7 @@ export async function upsertChecklistItem(params: {
   isAdmin?: boolean
 }) {
   if (!TIPOS_ITEM.includes(params.tipo_item)) throw new ChecklistError('Tipo de item inválido')
-  const solicitacao = await ensureSolicitacaoEditable(params.solicitacaoId, params.user, params.isAdmin)
+  const solicitacao = await ensureSolicitacaoFillable(params.solicitacaoId, params.user, params.isAdmin)
   if (solicitacao.tipo_solicitacao !== 'SETOR') throw new ChecklistError('Itens são permitidos apenas em solicitação setorial')
 
   const dados: Record<string, any> = {
@@ -743,6 +753,109 @@ export async function refreshItemReviewStatuses(solicitacaoId: string) {
             ? 'recusado'
             : 'parcial'
     await delegate('checklists_validacao_itens').update({ where: { id: item.id }, data: { status_revisao: status } })
+  }
+}
+
+export async function aprovarTudoSolicitacao(solicitacaoId: string, user: UserRef) {
+  const solicitacao = await ensureSolicitacaoRevisable(solicitacaoId)
+  await ensureSolicitacaoNotAssimilated(solicitacaoId)
+  const now = new Date()
+
+  if (solicitacao.tipo_solicitacao === 'RACK') {
+    const anterior = await delegate('checklists_validacao_solicitacoes').findUnique({ where: { id: solicitacaoId } })
+    const atualizado = await delegate('checklists_validacao_solicitacoes').update({
+      where: { id: solicitacaoId },
+      data: {
+        status: 'revisada',
+        status_revisao: 'aprovado',
+        revisado_por: user.id ?? null,
+        revisado_em: now,
+        atualizado_em: now,
+      },
+    })
+    await registrarAuditoria({
+      tabela: 'checklists_validacao_solicitacoes',
+      registro_id: solicitacaoId,
+      acao: 'APROVAR',
+      descricao: 'Solicitação de rack aprovada integralmente na revisão do checklist',
+      dados_anteriores: anterior,
+      dados_novos: atualizado,
+      usuario_id: user.id ?? null,
+      usuario_nome: user.nome ?? null,
+    })
+    return { tipo_solicitacao: 'RACK', solicitacao: atualizado, itens_aprovados: 1, diffs_aprovados: 0 }
+  }
+
+  if (solicitacao.tipo_solicitacao !== 'SETOR') throw new ChecklistError('Tipo de solicitação inválido')
+
+  const itens: ChecklistItemRow[] = await delegate('checklists_validacao_itens').findMany({
+    where: { checklist_validacao_solicitacao_id: solicitacaoId },
+    include: { diffs: true },
+  })
+  if (itens.length === 0) throw new ChecklistError('Nenhum ativo enviado para aprovar', 409)
+
+  let diffs = itens.flatMap(item => item.diffs ?? [])
+  if (diffs.length === 0) {
+    await gerarDiffSolicitacao(solicitacaoId)
+    const itensAtualizados: ChecklistItemRow[] = await delegate('checklists_validacao_itens').findMany({
+      where: { checklist_validacao_solicitacao_id: solicitacaoId },
+      include: { diffs: true },
+    })
+    diffs = itensAtualizados.flatMap(item => item.diffs ?? [])
+  }
+
+  const anterior = {
+    solicitacao,
+    itens: itens.map(item => ({ id: item.id, status_revisao: item.status_revisao })),
+    diffs: diffs.map(diff => ({ id: diff.id, status_revisao: diff.status_revisao })),
+  }
+
+  await prisma.$transaction(async tx => {
+    await (tx as any).checklists_validacao_diffs.updateMany({
+      where: { checklist_validacao_solicitacao_id: solicitacaoId },
+      data: { status_revisao: 'aprovado', atualizado_em: now },
+    })
+    await (tx as any).checklists_validacao_itens.updateMany({
+      where: { checklist_validacao_solicitacao_id: solicitacaoId },
+      data: {
+        status_revisao: 'aprovado',
+        revisado_por: user.id ?? null,
+        revisado_em: now,
+        atualizado_em: now,
+      },
+    })
+    await (tx as any).checklists_validacao_solicitacoes.update({
+      where: { id: solicitacaoId },
+      data: {
+        status: 'revisada',
+        status_revisao: 'aprovado',
+        revisado_por: user.id ?? null,
+        revisado_em: now,
+        atualizado_em: now,
+      },
+    })
+  })
+
+  await registrarAuditoria({
+    tabela: 'checklists_validacao_solicitacoes',
+    registro_id: solicitacaoId,
+    acao: 'APROVAR',
+    descricao: 'Todos os ativos e campos da solicitação foram aprovados na revisão do checklist',
+    dados_anteriores: anterior,
+    dados_novos: {
+      itens_aprovados: itens.length,
+      diffs_aprovados: diffs.length,
+      revisado_por: user.id ?? null,
+      revisado_em: now,
+    },
+    usuario_id: user.id ?? null,
+    usuario_nome: user.nome ?? null,
+  })
+
+  return {
+    tipo_solicitacao: 'SETOR',
+    itens_aprovados: itens.length,
+    diffs_aprovados: diffs.length,
   }
 }
 
