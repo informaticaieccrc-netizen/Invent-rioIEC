@@ -122,6 +122,10 @@ function allocationLabel(item: MonitorRow) {
   return item.maquina_nome ?? item.maquina_patrimonio ?? item.maquina_ip ?? activeAllocation(item)?.maquina?.nome_host ?? 'Livre'
 }
 
+function machineOptionLabel(option: MachineOption) {
+  return option.nome_host ?? option.patrimonio_cpu ?? option.endereco_ip ?? option.id
+}
+
 function getOverviewFilterKey(filter: OverviewFilter) {
   return `${filter.kind}:${filter.value ?? ''}`
 }
@@ -224,7 +228,7 @@ function MachineSearch({
         })
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'Erro ao criar pedido.')
         const pedido = await res.json().catch(() => null)
-        updatePedidoMaloteAfterSubmit(solicitacao.adicionarMaisPedidos, pedido, selected.label)
+        updatePedidoMaloteAfterSubmit(solicitacao.adicionarMaisPedidos, pedido, machineOptionLabel(selected))
         toast.success(solicitacao.adicionarMaisPedidos ? 'Solicitação enviada. Malote ativo para o próximo pedido.' : 'Solicitação enviada para aprovação.')
         setQuery('')
         setSelected(null)
@@ -296,7 +300,7 @@ function MachineSearch({
               onClick={() => setSelected(null)}
               className="w-full rounded-lg border border-blue-500/35 bg-blue-500/10 px-2.5 py-1.5 text-left text-xs font-bold text-blue-200"
             >
-              {selected.nome_host ?? selected.patrimonio_cpu ?? selected.id}
+              {machineOptionLabel(selected)}
             </button>
           )}
           {!selected && options.map(option => (
@@ -306,7 +310,7 @@ function MachineSearch({
               onClick={() => setSelected(option)}
               className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-left text-xs font-semibold text-slate-700 transition hover:border-blue-300 hover:text-blue-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-blue-700"
             >
-              <span className="block">{option.nome_host ?? option.patrimonio_cpu ?? option.id}</span>
+              <span className="block">{machineOptionLabel(option)}</span>
               <span className="text-[11px] text-slate-500">
                 {[option.setor_nome ?? 'Sem setor', option.localidade_nome].filter(Boolean).join(' · ')}
               </span>
