@@ -21,6 +21,7 @@ import { formatDate } from "@/lib/utils";
 import { AnimatedDialogFrame } from "@/components/layout/motion-primitives";
 import { DeviceCommentsPopover } from "@/components/forum/device-comments-popover";
 import { useSolicitacaoInventarioConfirm } from "@/components/solicitacoes-inventario/solicitacao-confirm-provider";
+import { updatePedidoMaloteAfterSubmit, withPedidoMaloteContext } from '@/lib/solicitacoes-inventario-client'
 
 const schema = z.object({
  modelo: z.string().optional().nullable(),
@@ -40,6 +41,12 @@ interface Props {
  notebook: Notebook;
  onClose: () => void;
  onRefresh: () => void;
+}
+
+async function assertResponseOk(res: Response, fallback: string) {
+ if (res.ok) return
+ const json = await res.json().catch(() => ({}))
+ throw new Error(typeof json.error === 'string' && json.error.trim() ? json.error : fallback)
 }
 
 export function NotebookModal({ notebook, onClose, onRefresh }: Props) {
@@ -107,16 +114,18 @@ export function NotebookModal({ notebook, onClose, onRefresh }: Props) {
     const res = await fetch('/api/solicitacoes-inventario', {
      method: 'POST',
      headers: { 'Content-Type': 'application/json' },
-     body: JSON.stringify({
+     body: JSON.stringify(withPedidoMaloteContext({
       tipo_recurso: 'alocacoes_notebooks',
       acao: 'ALLOCATE',
       dados_propostos: { notebook_id: notebook.id, colaborador_id: colabId },
       comentario: solicitacao.comentario,
-     }),
+     })),
     })
-    if (!res.ok) throw new Error()
-    toast.success('Solicitação enviada para aprovação.')
-    onClose()
+    await assertResponseOk(res, 'Erro ao criar solicitação de alocação.')
+    const pedido = await res.json().catch(() => null)
+    updatePedidoMaloteAfterSubmit(solicitacao.adicionarMaisPedidos, pedido, notebook.numero_patrimonio ?? notebook.modelo)
+    toast.success(solicitacao.adicionarMaisPedidos ? 'Solicitação enviada. Malote ativo para o próximo pedido.' : 'Solicitação enviada para aprovação.')
+    if (!solicitacao.adicionarMaisPedidos) onClose()
     return
    }
    const res = await fetch("/api/alocacoes/notebooks", {
@@ -124,12 +133,12 @@ export function NotebookModal({ notebook, onClose, onRefresh }: Props) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ notebook_id: notebook.id, colaborador_id: colabId }),
    });
-   if (!res.ok) throw new Error();
+   await assertResponseOk(res, 'Erro ao alocar notebook.');
    toast.success("Notebook alocado com sucesso!");
    onRefresh();
    onClose();
-  } catch {
-   toast.error("Erro ao alocar.");
+  } catch (error) {
+   toast.error(error instanceof Error ? error.message : "Erro ao alocar.");
   } finally {
    setSavingAlocacao(false);
   }
@@ -140,35 +149,37 @@ export function NotebookModal({ notebook, onClose, onRefresh }: Props) {
   try {
    if (!isAdmin) {
     const activeId = notebook.alocacoes_ativas?.[0]?.id
-    if (!activeId) throw new Error()
+    if (!activeId) throw new Error('Nenhuma alocação ativa encontrada.')
     const solicitacao = await confirmSolicitacao()
     if (!solicitacao.confirmed) return
     const res = await fetch('/api/solicitacoes-inventario', {
      method: 'POST',
      headers: { 'Content-Type': 'application/json' },
-     body: JSON.stringify({
+     body: JSON.stringify(withPedidoMaloteContext({
       tipo_recurso: 'alocacoes_notebooks',
       recurso_id: activeId,
       acao: 'DEALLOCATE',
       dados_anteriores: notebook.alocacoes_ativas?.[0] ?? null,
       dados_propostos: {},
       comentario: solicitacao.comentario,
-     }),
+     })),
     })
-    if (!res.ok) throw new Error()
-    toast.success('Solicitação enviada para aprovação.')
-    onClose()
+    await assertResponseOk(res, 'Erro ao criar solicitação de desalocação.')
+    const pedido = await res.json().catch(() => null)
+    updatePedidoMaloteAfterSubmit(solicitacao.adicionarMaisPedidos, pedido, notebook.numero_patrimonio ?? notebook.modelo)
+    toast.success(solicitacao.adicionarMaisPedidos ? 'Solicitação enviada. Malote ativo para o próximo pedido.' : 'Solicitação enviada para aprovação.')
+    if (!solicitacao.adicionarMaisPedidos) onClose()
     return
    }
    const res = await fetch(`/api/alocacoes/notebooks/${notebook.id}/ativo`, {
     method: "DELETE",
    });
-   if (!res.ok) throw new Error();
+   await assertResponseOk(res, 'Erro ao desalocar notebook.');
    toast.success("Alocação encerrada.");
    onRefresh();
    onClose();
-  } catch {
-   toast.error("Erro ao desalocar.");
+  } catch (error) {
+   toast.error(error instanceof Error ? error.message : "Erro ao desalocar.");
   } finally {
    setSavingAlocacao(false);
   }

@@ -20,6 +20,7 @@ import { ConfirmDialog } from '@/components/modals/confirm-dialog'
 import { formatDate } from '@/lib/utils'
 import { writePendingInspectPreview } from '@/lib/navigation-context'
 import { useSolicitacaoInventarioConfirm } from '@/components/solicitacoes-inventario/solicitacao-confirm-provider'
+import { updatePedidoMaloteAfterSubmit, withPedidoMaloteContext } from '@/lib/solicitacoes-inventario-client'
 
 interface AlocacaoItem {
   id: string
@@ -78,6 +79,12 @@ export function AlocacoesAtivasSection({
     router.push(href)
   }
 
+  async function assertResponseOk(res: Response, fallback: string) {
+    if (res.ok) return
+    const err = await res.json().catch(() => ({}))
+    throw new Error(typeof err.error === 'string' ? err.error : fallback)
+  }
+
   // Alocar novo colaborador
   async function alocar() {
     if (!novoColabId) return
@@ -95,19 +102,20 @@ export function AlocacoesAtivasSection({
         const res = await fetch('/api/solicitacoes-inventario', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+          body: JSON.stringify(withPedidoMaloteContext({
             tipo_recurso: `alocacoes_${entidade}`,
             acao: 'ALLOCATE',
             dados_propostos: bodyMap[entidade],
             comentario: solicitacao.comentario,
-          }),
+          })),
         })
-        if (!res.ok) throw new Error()
+        await assertResponseOk(res, 'Erro ao criar solicitação de alocação.')
         const pedido = await res.json().catch(() => null)
-        toast.success('Solicitação enviada para aprovação.')
+        updatePedidoMaloteAfterSubmit(solicitacao.adicionarMaisPedidos, pedido, novoColabNome)
+        toast.success(solicitacao.adicionarMaisPedidos ? 'Solicitação enviada. Malote ativo para o próximo pedido.' : 'Solicitação enviada para aprovação.')
         setNovoColabId('')
         setNovoColabNome('')
-        if (pedido) abrirPedidoCriado(pedido)
+        if (pedido && !solicitacao.adicionarMaisPedidos) abrirPedidoCriado(pedido)
         return
       }
       const res = await fetch(`/api/alocacoes/${entidade}`, {
@@ -115,13 +123,13 @@ export function AlocacoesAtivasSection({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(bodyMap[entidade]),
       })
-      if (!res.ok) throw new Error()
+      await assertResponseOk(res, 'Erro ao alocar colaborador.')
       toast.success('Colaborador alocado!')
       setNovoColabId('')
       setNovoColabNome('')
       onRefresh()
-    } catch {
-      toast.error('Erro ao alocar.')
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao alocar.')
     } finally {
       setSavingNova(false)
     }
@@ -138,29 +146,30 @@ export function AlocacoesAtivasSection({
         const res = await fetch('/api/solicitacoes-inventario', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+          body: JSON.stringify(withPedidoMaloteContext({
             tipo_recurso: `alocacoes_${entidade}`,
             recurso_id: alocacaoId,
             acao: 'DEALLOCATE',
             dados_anteriores: previous,
             dados_propostos: {},
             comentario: solicitacao.comentario,
-          }),
+          })),
         })
-        if (!res.ok) throw new Error()
+        await assertResponseOk(res, 'Erro ao criar solicitação de desalocação.')
         const pedido = await res.json().catch(() => null)
-        toast.success('Solicitação enviada para aprovação.')
-        if (pedido) abrirPedidoCriado(pedido)
+        updatePedidoMaloteAfterSubmit(solicitacao.adicionarMaisPedidos, pedido, previous?.colaborador?.nome)
+        toast.success(solicitacao.adicionarMaisPedidos ? 'Solicitação enviada. Malote ativo para o próximo pedido.' : 'Solicitação enviada para aprovação.')
+        if (pedido && !solicitacao.adicionarMaisPedidos) abrirPedidoCriado(pedido)
         return
       }
       const res = await fetch(`/api/alocacoes/${entidade}/${alocacaoId}`, {
         method: 'DELETE',
       })
-      if (!res.ok) throw new Error()
+      await assertResponseOk(res, 'Erro ao encerrar alocação.')
       toast.success('Alocação encerrada.')
       onRefresh()
-    } catch {
-      toast.error('Erro ao desalocar.')
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao desalocar.')
     } finally {
       setDesalocandoId(null)
       setConfirmDesalocar(null)
@@ -178,20 +187,21 @@ export function AlocacoesAtivasSection({
         const res = await fetch('/api/solicitacoes-inventario', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+          body: JSON.stringify(withPedidoMaloteContext({
             tipo_recurso: 'alocacoes_ramais',
             recurso_id: alocacaoId,
             acao: 'CORRECTION',
             dados_anteriores: previous,
             dados_propostos: { whatsapp: novoWhatsapp },
             comentario: solicitacao.comentario,
-          }),
+          })),
         })
-        if (!res.ok) throw new Error()
+        await assertResponseOk(res, 'Erro ao criar solicitação de atualização.')
         const pedido = await res.json().catch(() => null)
-        toast.success('Solicitação enviada para aprovação.')
+        updatePedidoMaloteAfterSubmit(solicitacao.adicionarMaisPedidos, pedido, previous?.colaborador?.nome)
+        toast.success(solicitacao.adicionarMaisPedidos ? 'Solicitação enviada. Malote ativo para o próximo pedido.' : 'Solicitação enviada para aprovação.')
         setEditandoWhatsappId(null)
-        if (pedido) abrirPedidoCriado(pedido)
+        if (pedido && !solicitacao.adicionarMaisPedidos) abrirPedidoCriado(pedido)
         return
       }
       const res = await fetch(`/api/alocacoes/${entidade}/${alocacaoId}`, {
@@ -199,12 +209,12 @@ export function AlocacoesAtivasSection({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ whatsapp: novoWhatsapp }),
       })
-      if (!res.ok) throw new Error()
+      await assertResponseOk(res, 'Erro ao atualizar.')
       toast.success('WhatsApp atualizado!')
       setEditandoWhatsappId(null)
       onRefresh()
-    } catch {
-      toast.error('Erro ao atualizar.')
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao atualizar.')
     } finally {
       setSavingWhatsapp(false)
     }

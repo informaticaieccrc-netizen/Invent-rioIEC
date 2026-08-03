@@ -4,6 +4,7 @@ import {
   useSolicitacaoInventarioConfirm,
   useSolicitacaoInventarioPerfil,
 } from '@/components/solicitacoes-inventario/solicitacao-confirm-provider'
+import { updatePedidoMaloteAfterSubmit, withPedidoMaloteContext } from '@/lib/solicitacoes-inventario-client'
 
 const UNDO_TIMEOUT_MS = 6000
 const REQUESTABLE_ENTITIES = new Set([
@@ -43,20 +44,22 @@ export function useCrud(entity: string, onSuccess?: () => void) {
         const res = await fetch('/api/solicitacoes-inventario', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+          body: JSON.stringify(withPedidoMaloteContext({
             tipo_recurso: entity,
             recurso_id: id,
             acao: entity.startsWith('alocacoes_') ? 'CORRECTION' : 'UPDATE',
             dados_anteriores: previous,
             dados_propostos: data,
             comentario: solicitacao.comentario,
-          }),
+          })),
         })
         if (!res.ok) {
           const err = await res.json().catch(() => ({}))
           throw new Error(err.error || 'Erro ao criar solicitação')
         }
-        toast.success('Solicitação enviada para aprovação.')
+        const pedido = await res.json().catch(() => null)
+        updatePedidoMaloteAfterSubmit(solicitacao.adicionarMaisPedidos, pedido)
+        toast.success(solicitacao.adicionarMaisPedidos ? 'Solicitação enviada. Malote ativo para o próximo pedido.' : 'Solicitação enviada para aprovação.')
         onSuccess?.()
         return
       }
@@ -151,20 +154,22 @@ export function useCrud(entity: string, onSuccess?: () => void) {
         const res = await fetch('/api/solicitacoes-inventario', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+          body: JSON.stringify(withPedidoMaloteContext({
             tipo_recurso: entity,
             recurso_id: id,
             acao: 'DELETE',
             dados_anteriores: previous,
             dados_propostos: {},
             comentario: solicitacao.comentario,
-          }),
+          })),
         })
         if (!res.ok) {
           const err = await res.json().catch(() => ({}))
           throw new Error(err.error || 'Erro ao criar solicitação')
         }
-        toast.success('Solicitação enviada para aprovação.')
+        const pedido = await res.json().catch(() => null)
+        updatePedidoMaloteAfterSubmit(solicitacao.adicionarMaisPedidos, pedido)
+        toast.success(solicitacao.adicionarMaisPedidos ? 'Solicitação enviada. Malote ativo para o próximo pedido.' : 'Solicitação enviada para aprovação.')
         onSuccess?.()
         return
       }

@@ -15,8 +15,10 @@ import {
   FileUp,
   FileText,
   GitPullRequest,
+  Layers3,
   Loader2,
   MessageCircle,
+  PackagePlus,
   Send,
   ShieldAlert,
   X,
@@ -34,6 +36,7 @@ import {
   removeInspectHref,
   writePendingInspectPreview,
 } from '@/lib/navigation-context'
+import { writePedidoMaloteContext } from '@/lib/solicitacoes-inventario-client'
 
 type JsonRecord = Record<string, unknown>
 
@@ -48,6 +51,9 @@ type Pedido = {
   acao: string
   dados_anteriores: JsonRecord | null
   dados_propostos: JsonRecord | null
+  pedido_pai_id: string | null
+  malote_id: string | null
+  malote_ordem: number | null
   solicitante_nome: string | null
   revisor_nome: string | null
   parecer: string | null
@@ -66,11 +72,19 @@ type PedidoComentario = {
   created_at?: string
 }
 
+type MaloteComentario = PedidoComentario & {
+  pedido_id: string
+  pedido_ordem: number
+  pedido_label: string
+}
+
 type DiffRow = {
   key: string
   label: string
   before: unknown
   after: unknown
+  beforeSource: JsonRecord
+  afterSource: JsonRecord
 }
 
 type InspectTarget = {
@@ -137,13 +151,18 @@ const FIELD_LABELS: Record<string, string> = {
   impressora_id: 'Impressora',
   ramal_id: 'Ramal',
   rack_id: 'Rack',
+  monitor_id: 'Monitor',
   nome_host: 'Host',
   endereco_ip: 'IP',
   identificador: 'Identificador',
   modelo: 'Modelo',
   fabricante: 'Fabricante',
+  endereco_mac: 'MAC',
+  numero_serie: 'Série',
+  serial: 'Serial',
   numero_patrimonio: 'Patrimônio',
   numero_ramal: 'Ramal',
+  prefixo_telefonico: 'Prefixo',
   disponibilidade: 'Disponibilidade',
   data_inicio: 'Data de início',
   data_fim: 'Data de fim',
@@ -171,6 +190,7 @@ const DISPLAY_ONLY_KEYS = new Set([
   'impressora_label',
   'ramal_label',
   'rack_label',
+  'monitor_label',
   'recurso_label',
   'setor_rel',
   'localidade_rel',
@@ -191,6 +211,24 @@ const DISPLAY_ONLY_KEYS = new Set([
   'enviado_por_nome',
   'pasta_id',
 ])
+
+const DELETE_REVIEW_KEYS: Record<string, string[]> = {
+  maquinas: ['endereco_ip', 'nome_host', 'identificador', 'modelo', 'fabricante', 'setor_id', 'localidade_id', 'status'],
+  notebooks: ['numero_patrimonio', 'modelo', 'fabricante', 'setor_id', 'localidade_id', 'status'],
+  aparelhos: ['endereco_ip', 'modelo', 'fabricante', 'setor_id', 'localidade_id', 'status'],
+  impressoras: ['endereco_ip', 'modelo', 'fabricante', 'setor_id', 'localidade_id', 'status'],
+  ramais: ['numero_ramal', 'prefixo_telefonico', 'setor_id', 'localidade_id', 'status'],
+  racks: ['nome_switch', 'numero_patrimonio', 'modelo', 'setor_id', 'localidade_id', 'status'],
+  colaboradores: ['nome', 'codigo_pessoa', 'codigo', 'email', 'setor_id', 'localidade_id', 'status'],
+}
+
+const ALLOCATION_REVIEW_KEYS: Record<string, string[]> = {
+  alocacoes_maquinas: ['colaborador_id', 'maquina_id', 'data_inicio', 'ativo', 'data_fim'],
+  alocacoes_notebooks: ['colaborador_id', 'notebook_id', 'data_inicio', 'ativo', 'data_fim'],
+  alocacoes_aparelhos: ['colaborador_id', 'aparelho_id', 'data_inicio', 'ativo', 'data_fim'],
+  alocacoes_ramais: ['colaborador_id', 'ramal_id', 'data_inicio', 'ativo', 'data_fim'],
+  alocacoes_monitores: ['maquina_id', 'monitor_id', 'setor_id', 'data_inicio', 'ativo', 'data_fim'],
+}
 
 const STATUS_META: Record<PedidoStatus, { label: string; tone: string; icon: typeof Clock3 }> = {
   pendente: { label: 'Pendentes', tone: 'border-amber-500/30 bg-amber-500/10 text-amber-200', icon: Clock3 },
@@ -259,6 +297,7 @@ function formatValue(value: unknown, key: string, source: JsonRecord) {
     if (label) return label
     if (isUuid(value)) return FIELD_LABELS[key] ? `${FIELD_LABELS[key]} vinculado` : 'Registro vinculado'
   }
+  if (isUuid(value)) return FIELD_LABELS[key] ? `${FIELD_LABELS[key]} vinculado` : 'Registro vinculado'
   if (value === null || value === undefined || value === '') return '—'
   if (typeof value === 'boolean') return value ? 'Sim' : 'Não'
   if (value instanceof Date) return formatDate(value.toISOString())
@@ -304,6 +343,54 @@ function renderPedidoArquivoIcon(mime: string) {
   return <File className="h-5 w-5" />
 }
 
+function uniqueKeys(keys: string[]) {
+  return Array.from(new Set(keys))
+}
+
+function presentKeys(source: JsonRecord, keys: string[]) {
+  return keys.filter(key => key in source && !DISPLAY_ONLY_KEYS.has(key))
+}
+
+function fallbackReviewKeys(source: JsonRecord, limit = 6) {
+  return Object.keys(source)
+    .filter(key => !DISPLAY_ONLY_KEYS.has(key))
+    .filter(key => source[key] !== null && source[key] !== undefined && source[key] !== '')
+    .slice(0, limit)
+}
+
+function preferredDeleteKeys(pedido: Pedido, previous: JsonRecord, next: JsonRecord) {
+  const preferred = DELETE_REVIEW_KEYS[pedido.tipo_recurso] ?? [
+    'nome',
+    'endereco_ip',
+    'nome_host',
+    'identificador',
+    'numero_patrimonio',
+    'numero_ramal',
+    'modelo',
+    'setor_id',
+    'localidade_id',
+    'status',
+  ]
+  const keys = presentKeys({ ...previous, ...next }, preferred)
+  return keys.length > 0 ? keys : fallbackReviewKeys(previous)
+}
+
+function preferredAllocationKeys(pedido: Pedido, previous: JsonRecord, next: JsonRecord) {
+  const preferred = ALLOCATION_REVIEW_KEYS[pedido.tipo_recurso] ?? [
+    'colaborador_id',
+    'maquina_id',
+    'notebook_id',
+    'aparelho_id',
+    'ramal_id',
+    'monitor_id',
+    'data_inicio',
+    'ativo',
+    'data_fim',
+  ]
+  const keys = presentKeys({ ...previous, ...next }, preferred)
+  return keys.length > 0 ? keys : fallbackReviewKeys({ ...previous, ...next })
+}
+
 function reviewKeys(pedido: Pedido) {
   const previous = pedido.dados_anteriores ?? {}
   const next = pedido.dados_propostos ?? {}
@@ -313,10 +400,12 @@ function reviewKeys(pedido: Pedido) {
 
   const proposedKeys = Object.keys(next).filter(key => !DISPLAY_ONLY_KEYS.has(key))
 
-  if (pedido.acao === 'DELETE' || pedido.acao === 'DEALLOCATE') {
-    return proposedKeys.length > 0
-      ? proposedKeys
-      : ['ativo', 'data_fim'].filter(key => key in previous || key in next)
+  if (pedido.acao === 'DELETE') {
+    return preferredDeleteKeys(pedido, previous, next)
+  }
+
+  if (pedido.acao === 'DEALLOCATE') {
+    return uniqueKeys([...preferredAllocationKeys(pedido, previous, next), ...proposedKeys])
   }
 
   if (proposedKeys.length > 0) {
@@ -332,12 +421,27 @@ function diffRows(pedido: Pedido): DiffRow[] {
   const previous = pedido.dados_anteriores ?? {}
   const next = pedido.dados_propostos ?? {}
 
-  return reviewKeys(pedido).map(key => ({
-    key,
-    label: FIELD_LABELS[key] ?? key.replace(/_/g, ' '),
-    before: previous[key],
-    after: next[key],
-  }))
+  return reviewKeys(pedido).map(key => {
+    let after = next[key]
+    let afterSource = next
+    if (pedido.acao === 'DELETE') {
+      after = 'Registro excluído'
+    } else if (pedido.acao === 'DEALLOCATE' && !(key in next)) {
+      if (key === 'ativo') after = false
+      else if (key === 'data_fim') after = 'Ao aprovar'
+      else after = previous[key]
+      afterSource = previous
+    }
+
+    return {
+      key,
+      label: FIELD_LABELS[key] ?? key.replace(/_/g, ' '),
+      before: previous[key],
+      after,
+      beforeSource: previous,
+      afterSource,
+    }
+  })
 }
 
 function targetLabel(pedido: Pedido) {
@@ -398,6 +502,41 @@ function pedidoActionLabel(pedido: Pedido) {
   return isTrocaAlocacao(pedido) ? 'Troca' : ACTION_LABELS[pedido.acao] ?? pedido.acao
 }
 
+function pedidoMaloteKey(pedido: Pedido) {
+  return pedido.malote_id ?? pedido.id
+}
+
+function sortPedidosByMaloteOrder(items: Pedido[]) {
+  return [...items].sort((a, b) => {
+    const orderA = typeof a.malote_ordem === 'number' ? a.malote_ordem : 1
+    const orderB = typeof b.malote_ordem === 'number' ? b.malote_ordem : 1
+    if (orderA !== orderB) return orderA - orderB
+    return new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime()
+  })
+}
+
+function sortComentariosByDate(items: MaloteComentario[]) {
+  return [...items].sort((a, b) => {
+    const dateA = new Date(a.created_at ?? 0).getTime()
+    const dateB = new Date(b.created_at ?? 0).getTime()
+    if (dateA !== dateB) return dateA - dateB
+    return a.pedido_ordem - b.pedido_ordem
+  })
+}
+
+function buildMaloteComentarios(pedidos: Pedido[]): MaloteComentario[] {
+  return sortComentariosByDate(pedidos.flatMap((pedido, pedidoIndex) => {
+    const comentarios = Array.isArray(pedido.comentarios) ? pedido.comentarios : []
+    return comentarios.map((comentario, comentarioIndex) => ({
+      ...comentario,
+      id: comentario.id ?? `${pedido.id}-${comentarioIndex}`,
+      pedido_id: pedido.id,
+      pedido_ordem: pedidoIndex + 1,
+      pedido_label: targetLabel(pedido),
+    }))
+  }))
+}
+
 function trocaAlocacaoResumo(pedido: Pedido) {
   const previous = pedido.dados_anteriores ?? {}
   const next = pedido.dados_propostos ?? {}
@@ -428,11 +567,7 @@ function requestSummary(pedido: Pedido) {
 
   return rows
     .slice(0, 2)
-    .map(row => {
-      const previous = pedido.dados_anteriores ?? {}
-      const next = pedido.dados_propostos ?? {}
-      return `${row.label}: ${formatValue(row.before, row.key, previous)} → ${formatValue(row.after, row.key, next)}`
-    })
+    .map(row => `${row.label}: ${formatValue(row.before, row.key, row.beforeSource)} → ${formatValue(row.after, row.key, row.afterSource)}`)
     .join(' · ')
 }
 
@@ -614,6 +749,44 @@ export default function PedidosPage() {
     router.push(href)
   }
 
+  function startPedidoMalote(pedido: Pedido) {
+    if (pedido.status !== 'pendente') {
+      notifyPedidoToast('Pedido já revisado', 'Somente pedidos pendentes podem receber novas solicitações correlatas.', '#f59e0b')
+      return
+    }
+
+    const target = getPedidoInspectTarget(pedido)
+    writePedidoMaloteContext({
+      pedido_pai_id: pedido.id,
+      malote_id: pedidoMaloteKey(pedido),
+      label: targetLabel(pedido),
+    }, window.sessionStorage)
+
+    notifyPedidoToast('Malote ativo', 'A próxima solicitação enviada será empilhada sobre este pedido.', '#3b82f6')
+
+    if (!target) return
+
+    if (target.href) {
+      writePendingInspectPreview(window.sessionStorage, target.href, inferInspectPreview({
+        id: target.id,
+        nome: target.title,
+        descricao: target.subtitle,
+      }))
+      router.push(target.href)
+      return
+    }
+
+    const params = new URLSearchParams()
+    params.set('inspect', target.id)
+    const href = buildHref(target.path, params)
+    writePendingInspectPreview(window.sessionStorage, href, inferInspectPreview({
+      id: target.id,
+      nome: target.title,
+      descricao: target.subtitle,
+    }))
+    router.push(href)
+  }
+
   async function sendComment(pedido: Pedido) {
     const comentario = chatDraft.trim()
     if (!comentario) return
@@ -627,7 +800,7 @@ export default function PedidosPage() {
       const json = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(json.error || 'Erro ao enviar comentário')
       setPedidos(current => current.map(item => item.id === pedido.id ? json : item))
-      setSelected(json)
+      setSelected(current => current?.id === pedido.id ? json : current)
       setChatDraft('')
       notifyPedidoToast('Comentário enviado', 'A conversa da solicitação foi atualizada.', '#3b82f6')
     } catch (error: any) {
@@ -667,7 +840,10 @@ export default function PedidosPage() {
     }
 
     const match = pedidos.find(pedido => pedido.id === inspectId)
-    if (match) setSelected(match)
+    if (match) {
+      const key = pedidoMaloteKey(match)
+      setSelected(sortPedidosByMaloteOrder(pedidos.filter(pedido => pedidoMaloteKey(pedido) === key))[0] ?? match)
+    }
   }, [inspectId, pedidos])
 
   const filtered = useMemo(() => {
@@ -678,6 +854,34 @@ export default function PedidosPage() {
       return true
     })
   }, [pedidos, statusFilter, kindFilter, actionFilter])
+
+  const filteredGroups = useMemo(() => {
+    const groups = new Map<string, Pedido[]>()
+    for (const pedido of filtered) {
+      const key = pedidoMaloteKey(pedido)
+      groups.set(key, [...(groups.get(key) ?? []), pedido])
+    }
+
+    return Array.from(groups.entries())
+      .map(([key, items]) => {
+        const ordered = sortPedidosByMaloteOrder(items)
+        return { key, pedidos: ordered, representative: ordered[0]! }
+      })
+      .sort((a, b) => {
+        const dateA = new Date(a.representative.created_at ?? 0).getTime()
+        const dateB = new Date(b.representative.created_at ?? 0).getTime()
+        return dateB - dateA
+      })
+  }, [filtered])
+
+  const maloteCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const pedido of pedidos) {
+      const key = pedidoMaloteKey(pedido)
+      counts.set(key, (counts.get(key) ?? 0) + 1)
+    }
+    return counts
+  }, [pedidos])
 
   const overview = useMemo(() => {
     const overviewItems = pedidos
@@ -721,9 +925,18 @@ export default function PedidosPage() {
       { key: 'erro', header: 'Erro de aplicação', value: pedido => pedido.erro_aplicacao },
     ],
   }
+  const selectedMalotePedidos = useMemo(() => {
+    if (!selected) return []
+    const key = pedidoMaloteKey(selected)
+    return sortPedidosByMaloteOrder(pedidos.filter(pedido => pedidoMaloteKey(pedido) === key))
+  }, [pedidos, selected])
   const selectedContextRows = selected ? buildContextRows(selected) : []
   const selectedTarget = selected ? getPedidoInspectTarget(selected) : null
-  const selectedArquivo = selected ? getPedidoArquivoInfo(selected) : null
+  const selectedMaloteCount = selectedMalotePedidos.length || 1
+  const selectedMaloteComentarios = useMemo(
+    () => buildMaloteComentarios(selectedMalotePedidos),
+    [selectedMalotePedidos],
+  )
 
   async function review(pedido: Pedido, decisao: 'aprovar' | 'recusar') {
     setReviewingId(pedido.id)
@@ -771,7 +984,7 @@ export default function PedidosPage() {
             ? 'Solicitações aguardando revisão administrativa'
             : 'Acompanhe as solicitações que você enviou para aprovação'}
         </p>
-        <p className="mt-1 text-sm text-slate-500">{filtered.length} registro(s)</p>
+        <p className="mt-1 text-sm text-slate-500">{filteredGroups.length} inspeção(ões) · {filtered.length} pedido(s)</p>
       </div>
 
       <section className="mb-4 rounded-xl border border-slate-800 bg-slate-900/60 p-3">
@@ -923,14 +1136,16 @@ export default function PedidosPage() {
           animate="show"
           variants={{ hidden: {}, show: { transition: { staggerChildren: 0.035 } } }}
         >
-          {filtered.map(pedido => {
-              const rows = diffRows(pedido)
+          {filteredGroups.map(group => {
+              const pedido = group.representative
+              const rows = group.pedidos.flatMap(item => diffRows(item))
               const isPending = pedido.status === 'pendente'
               const reviewing = reviewingId === pedido.id
+              const maloteCount = maloteCounts.get(group.key) ?? group.pedidos.length
 
               return (
                 <motion.article
-                  key={pedido.id}
+                  key={group.key}
                   variants={{
                     hidden: { opacity: 0, y: 8 },
                     show: { opacity: 1, y: 0 },
@@ -948,15 +1163,32 @@ export default function PedidosPage() {
                         <h2 className="mt-1.5 truncate text-base font-bold text-white">{targetLabel(pedido)}</h2>
                         <p className="mt-0.5 text-xs text-slate-400">{RESOURCE_LABELS[pedido.tipo_recurso] ?? pedido.tipo_recurso}</p>
                       </div>
-                      <span className={cn('rounded-full border px-2 py-0.5 text-[11px] font-semibold', STATUS_META[pedido.status].tone)}>
-                        {STATUS_META[pedido.status].label.replace(/s$/, '')}
-                      </span>
+                      <div className="flex shrink-0 flex-col items-end gap-1">
+                        <span className={cn('rounded-full border px-2 py-0.5 text-[11px] font-semibold', STATUS_META[pedido.status].tone)}>
+                          {STATUS_META[pedido.status].label.replace(/s$/, '')}
+                        </span>
+                        {maloteCount > 1 && (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-blue-500/30 bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-200">
+                            <Layers3 className="h-3 w-3" />
+                            {maloteCount} itens
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     <div className="mb-3 rounded-lg border border-slate-800 bg-slate-950/70 p-2.5">
                       <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Mudança proposta</p>
-                      <p className="line-clamp-2 text-xs font-medium leading-5 text-slate-200">{requestSummary(pedido)}</p>
-                      {rows.length > 2 && <p className="mt-2 text-xs text-slate-500">+{rows.length - 2} campo(s) no detalhe</p>}
+                      <p className="line-clamp-2 text-xs font-medium leading-5 text-slate-200">
+                        {maloteCount > 1
+                          ? group.pedidos.slice(0, 2).map(item => requestSummary(item)).join(' · ')
+                          : requestSummary(pedido)}
+                      </p>
+                      {maloteCount > 1 && (
+                        <p className="mt-2 text-xs text-slate-500">
+                          {maloteCount} pedidos no malote{group.pedidos.length > 2 ? ` · +${group.pedidos.length - 2} item(ns)` : ''}
+                        </p>
+                      )}
+                      {maloteCount === 1 && rows.length > 2 && <p className="mt-2 text-xs text-slate-500">+{rows.length - 2} campo(s) no detalhe</p>}
                     </div>
 
                     <div className="grid gap-1 text-xs text-slate-400">
@@ -983,7 +1215,7 @@ export default function PedidosPage() {
                         disabled={reviewing}
                         className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-blue-500 disabled:opacity-60"
                       >
-                        {reviewing ? 'Aplicando...' : 'Aprovar'}
+                        {reviewing ? 'Aplicando...' : maloteCount > 1 ? 'Aprovar malote' : 'Aprovar'}
                       </button>
                     ) : (
                       <div className="rounded-lg border border-slate-800 px-3 py-2 text-center text-xs font-semibold text-slate-400">
@@ -997,7 +1229,7 @@ export default function PedidosPage() {
         </motion.div>
       )}
 
-      {!loading && filtered.length === 0 && (
+      {!loading && filteredGroups.length === 0 && (
         <div className="rounded-2xl border border-dashed border-slate-800 p-8 text-center text-slate-400">
           Nenhum pedido encontrado com os filtros atuais.
         </div>
@@ -1016,6 +1248,18 @@ export default function PedidosPage() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
+                  {selected.status === 'pendente' && (
+                    <button
+                      type="button"
+                      onClick={() => startPedidoMalote(selected)}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-full border border-blue-500/40 px-3 text-xs font-semibold text-blue-200 transition hover:bg-blue-500/10"
+                      aria-label="Empilhar novo pedido neste malote"
+                      title="Empilhar pedido"
+                    >
+                      <PackagePlus className="h-4 w-4" />
+                      Empilhar
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => setChatOpen(value => !value)}
@@ -1029,9 +1273,9 @@ export default function PedidosPage() {
                     title="Comentários"
                   >
                     <MessageCircle className="h-4 w-4" />
-                    {(selected.comentarios?.length ?? 0) > 0 && (
+                    {selectedMaloteComentarios.length > 0 && (
                       <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-blue-500 px-1 text-[10px] font-bold text-white">
-                        {selected.comentarios!.length}
+                        {selectedMaloteComentarios.length}
                       </span>
                     )}
                   </button>
@@ -1057,6 +1301,13 @@ export default function PedidosPage() {
                   <p className="mt-1 text-sm font-semibold text-white">{formatDate(selected.created_at)}</p>
                 </div>
               </div>
+
+              {selectedMaloteCount > 1 && (
+                <div className="mb-3 flex items-center gap-2 rounded-lg border border-blue-500/30 bg-blue-500/10 p-3 text-sm text-blue-100">
+                  <Layers3 className="h-4 w-4 shrink-0" />
+                  <span className="font-semibold">Malote com {selectedMaloteCount} pedidos correlatos.</span>
+                </div>
+              )}
 
               {selected.erro_aplicacao && (
                 <div className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
@@ -1095,36 +1346,6 @@ export default function PedidosPage() {
                 </div>
               </section>
 
-              {selectedArquivo && (
-                <section className="mb-3 rounded-lg border border-slate-800 bg-slate-950/70 p-3">
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Arquivo para verificação</p>
-                      <p className="mt-1 text-xs text-slate-400">Confira o anexo antes de aprovar o pedido.</p>
-                    </div>
-                    <a
-                      href={selectedArquivo.href}
-                      download={selectedArquivo.nome}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-blue-500/40 px-2.5 py-1.5 text-xs font-semibold text-blue-200 transition hover:bg-blue-500/10"
-                    >
-                      Baixar
-                      <Download className="h-3.5 w-3.5" />
-                    </a>
-                  </div>
-                  <div className="flex min-w-0 items-center gap-3 rounded-lg border border-slate-800 bg-slate-900/75 p-3">
-                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-slate-700 bg-slate-950 text-blue-300">
-                      {renderPedidoArquivoIcon(selectedArquivo.tipo)}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-white">{selectedArquivo.nome}</p>
-                      <p className="mt-1 truncate text-xs text-slate-500">
-                        {[selectedArquivo.tipo, selectedArquivo.tamanho].filter(Boolean).join(' · ')}
-                      </p>
-                    </div>
-                  </div>
-                </section>
-              )}
-
               <AnimatePresence initial={false}>
                 {chatOpen && (
                   <motion.section
@@ -1137,18 +1358,20 @@ export default function PedidosPage() {
                     <div className="mb-3 flex items-center justify-between gap-3">
                       <div>
                         <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Comentários</p>
-                        <p className="mt-1 text-xs text-slate-400">Conversa vinculada a esta solicitação.</p>
+                        <p className="mt-1 text-xs text-slate-400">
+                          {selectedMaloteCount > 1 ? 'Conversa consolidada dos pedidos deste malote.' : 'Conversa vinculada a esta solicitação.'}
+                        </p>
                       </div>
                     </div>
                     <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
-                      {(selected.comentarios ?? []).length === 0 && (
+                      {selectedMaloteComentarios.length === 0 && (
                         <p className="rounded-md border border-dashed border-slate-800 p-3 text-xs text-slate-500">
                           Nenhum comentário ainda.
                         </p>
                       )}
-                      {(selected.comentarios ?? []).map((comentario, index) => (
+                      {selectedMaloteComentarios.map((comentario, index) => (
                         <div
-                          key={comentario.id ?? index}
+                          key={`${comentario.pedido_id}-${comentario.id ?? index}`}
                           className={cn(
                             'rounded-lg border p-2.5',
                             comentario.papel === 'revisor'
@@ -1164,6 +1387,11 @@ export default function PedidosPage() {
                               {comentario.papel === 'revisor' ? 'Aprovador' : 'Solicitante'}
                             </span>
                           </div>
+                          {selectedMaloteCount > 1 && (
+                            <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-blue-300">
+                              Pedido {comentario.pedido_ordem} · {comentario.pedido_label}
+                            </p>
+                          )}
                           <p className="whitespace-pre-wrap text-xs leading-5 text-slate-300">{comentario.conteudo}</p>
                           {comentario.created_at && (
                             <p className="mt-1 text-[10px] text-slate-500">{formatDate(comentario.created_at)}</p>
@@ -1193,49 +1421,95 @@ export default function PedidosPage() {
               </AnimatePresence>
 
               <div className="space-y-3">
-                {isTrocaAlocacao(selected) && (() => {
-                  const troca = trocaAlocacaoResumo(selected)
+                <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Pedidos do malote</p>
+                  <p className="mt-1 text-sm font-semibold text-white">
+                    {selectedMaloteCount > 1 ? `${selectedMaloteCount} solicitações serão revisadas juntas` : '1 solicitação para revisão'}
+                  </p>
+                </div>
+
+                {selectedMalotePedidos.map((pedido, index) => {
+                  const rows = diffRows(pedido)
+                  const arquivo = getPedidoArquivoInfo(pedido)
                   return (
-                    <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-3">
-                      <p className="mb-3 text-sm font-semibold text-white">Troca de alocação</p>
-                      <div className="grid gap-2 md:grid-cols-2">
-                        <div className="rounded-md bg-rose-500/10 p-2.5 text-sm text-rose-100">
-                          <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-rose-300">1. Desalocação</p>
-                          <p className="break-words text-sm font-semibold">{troca.anterior}</p>
+                    <section key={pedido.id} className="rounded-lg border border-slate-800 bg-slate-950/70 p-3">
+                      <div className="mb-3 flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-blue-300">
+                            Pedido {index + 1} · {pedidoActionLabel(pedido)}
+                          </p>
+                          <h3 className="mt-1 truncate text-sm font-semibold text-white">{targetLabel(pedido)}</h3>
+                          <p className="mt-1 text-xs leading-5 text-slate-400">{requestSummary(pedido)}</p>
                         </div>
-                        <div className="rounded-md bg-emerald-500/10 p-2.5 text-sm text-emerald-100">
-                          <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-300">2. Alocação</p>
-                          <p className="break-words text-sm font-semibold">{troca.novo}</p>
-                        </div>
+                        <span className={cn('shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold', STATUS_META[pedido.status].tone)}>
+                          {STATUS_META[pedido.status].label.replace(/s$/, '')}
+                        </span>
                       </div>
-                    </div>
-                  )
-                })()}
-                {diffRows(selected).map(row => {
-                  const previous = selected.dados_anteriores ?? {}
-                  const next = selected.dados_propostos ?? {}
-                  return (
-                    <div key={row.key} className="rounded-lg border border-slate-800 bg-slate-950/70 p-3">
-                      <p className="mb-2 text-sm font-semibold text-white">{row.label}</p>
-                      <div className="grid gap-2 md:grid-cols-2">
-                        <div className="rounded-md bg-rose-500/10 p-2.5 text-sm text-rose-100">
-                          <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-rose-300">Antes</p>
-                          <p className="break-words text-sm font-semibold">{formatValue(row.before, row.key, previous)}</p>
-                        </div>
-                        <div className="rounded-md bg-emerald-500/10 p-2.5 text-sm text-emerald-100">
-                          <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-300">Proposto</p>
-                          <p className="break-words text-sm font-semibold">{formatValue(row.after, row.key, next)}</p>
-                        </div>
+
+                      {isTrocaAlocacao(pedido) && (() => {
+                        const troca = trocaAlocacaoResumo(pedido)
+                        return (
+                          <div className="mb-3 rounded-lg border border-blue-500/30 bg-blue-500/10 p-3">
+                            <p className="mb-3 text-sm font-semibold text-white">Troca de alocação</p>
+                            <div className="grid gap-2 md:grid-cols-2">
+                              <div className="rounded-md bg-rose-500/10 p-2.5 text-sm text-rose-100">
+                                <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-rose-300">1. Desalocação</p>
+                                <p className="break-words text-sm font-semibold">{troca.anterior}</p>
+                              </div>
+                              <div className="rounded-md bg-emerald-500/10 p-2.5 text-sm text-emerald-100">
+                                <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-300">2. Alocação</p>
+                                <p className="break-words text-sm font-semibold">{troca.novo}</p>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })()}
+
+                      {arquivo && (
+                        <a
+                          href={arquivo.href}
+                          download={arquivo.nome}
+                          className="mb-3 flex min-w-0 items-center gap-3 rounded-lg border border-slate-800 bg-slate-900/75 p-3 transition hover:border-blue-500/40"
+                        >
+                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-700 bg-slate-950 text-blue-300">
+                            {renderPedidoArquivoIcon(arquivo.tipo)}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-semibold text-white">{arquivo.nome}</span>
+                            <span className="mt-1 block truncate text-xs text-slate-500">
+                              {[arquivo.tipo, arquivo.tamanho].filter(Boolean).join(' · ')}
+                            </span>
+                          </span>
+                          <Download className="h-3.5 w-3.5 shrink-0 text-blue-200" />
+                        </a>
+                      )}
+
+                      <div className="space-y-2">
+                        {rows.map(row => (
+                          <div key={`${pedido.id}-${row.key}`} className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+                            <p className="mb-2 text-sm font-semibold text-white">{row.label}</p>
+                            <div className="grid gap-2 md:grid-cols-2">
+                              <div className="rounded-md bg-rose-500/10 p-2.5 text-sm text-rose-100">
+                                <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-rose-300">Antes</p>
+                                <p className="break-words text-sm font-semibold">{formatValue(row.before, row.key, row.beforeSource)}</p>
+                              </div>
+                              <div className="rounded-md bg-emerald-500/10 p-2.5 text-sm text-emerald-100">
+                                <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-300">Proposto</p>
+                                <p className="break-words text-sm font-semibold">{formatValue(row.after, row.key, row.afterSource)}</p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                        {rows.length === 0 && !arquivo && (
+                          <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-400">
+                            <FileText className="mb-2 h-5 w-5" />
+                            Nenhuma diferença estruturada detectada.
+                          </div>
+                        )}
                       </div>
-                    </div>
+                    </section>
                   )
                 })}
-                {diffRows(selected).length === 0 && (
-                  <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-400">
-                    <FileText className="mb-2 h-5 w-5" />
-                    Nenhuma diferença estruturada detectada.
-                  </div>
-                )}
               </div>
 
               {(selected.revisor_nome || selected.revisado_em) && (
@@ -1258,7 +1532,7 @@ export default function PedidosPage() {
                     className="flex items-center justify-center gap-2 rounded-lg border border-rose-500/50 px-4 py-2.5 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/10 disabled:opacity-50"
                   >
                     <X className="h-4 w-4" />
-                    Recusar
+                    {selectedMaloteCount > 1 ? 'Recusar malote' : 'Recusar'}
                   </button>
                   <button
                     type="button"
@@ -1267,7 +1541,7 @@ export default function PedidosPage() {
                     className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:opacity-50"
                   >
                     {reviewingId ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                    Aprovar
+                    {selectedMaloteCount > 1 ? 'Aprovar malote' : 'Aprovar'}
                   </button>
                 </div>
               </div>

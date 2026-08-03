@@ -382,8 +382,10 @@ type AuditEntry = {
 type ChecklistCollaboratorAllocation = Record<string, unknown> & {
   id: string
   colaborador_id: string | null
+  maquina_id: string | null
   ativo: boolean
   colaborador?: { id: string; nome: string | null } | null
+  maquina?: { id: string; nome_host: string | null; categoria: string | null } | null
 }
 
 type ChecklistMonitorAllocation = Record<string, unknown> & {
@@ -420,6 +422,12 @@ async function reconcileMachineCollaborators(tx: any, params: {
   const explicitEmpty = String(data.colaboradores_estacao ?? '').toLowerCase().includes('sem colaborador')
   if (targetIds.length === 0 && !explicitEmpty) return
 
+  const targetMachine = await tx.maquinas.findUnique({
+    where: { id: params.maquinaId },
+    select: { categoria: true },
+  })
+  const targetIsAdministrative = targetMachine?.categoria === 'Administrativa'
+
   const current: ChecklistCollaboratorAllocation[] = await tx.alocacoes_maquinas.findMany({
     where: { maquina_id: params.maquinaId, ativo: true },
     include: { colaborador: { select: { id: true, nome: true } } },
@@ -445,6 +453,33 @@ async function reconcileMachineCollaborators(tx: any, params: {
 
   for (const colaboradorId of targetIds) {
     if (current.some(allocation => allocation.colaborador_id === colaboradorId && allocation.ativo)) continue
+    const outrasAtivas: ChecklistCollaboratorAllocation[] = await tx.alocacoes_maquinas.findMany({
+      where: { colaborador_id: colaboradorId, ativo: true, maquina_id: { not: params.maquinaId } },
+      include: {
+        colaborador: { select: { id: true, nome: true } },
+        maquina: { select: { id: true, nome_host: true, categoria: true } },
+      },
+    })
+
+    const alocacoesParaEncerrar = targetIsAdministrative
+      ? outrasAtivas.filter(allocation => allocation.maquina?.categoria === 'Administrativa')
+      : []
+
+    for (const allocation of alocacoesParaEncerrar) {
+      const updated = await tx.alocacoes_maquinas.update({
+        where: { id: allocation.id },
+        data: { ativo: false, data_fim: params.now },
+      })
+      pushAudit(params.audits, {
+        tabela: 'alocacoes_maquinas',
+        registro_id: updated.id,
+        acao: 'DESALOCAR',
+        descricao: `Checklist moveu colaborador para outra máquina${allocation.colaborador?.nome ? `: ${allocation.colaborador.nome}` : ''}`,
+        dados_anteriores: allocation,
+        dados_novos: updated,
+      })
+    }
+
     const created = await tx.alocacoes_maquinas.create({
       data: {
         maquina_id: params.maquinaId,

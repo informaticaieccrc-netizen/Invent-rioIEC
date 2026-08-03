@@ -12,6 +12,10 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { formatDate } from '@/lib/utils'
 import { pushInspectHistory } from '@/lib/navigation-context'
 import { useSolicitacaoInventarioConfirm } from '@/components/solicitacoes-inventario/solicitacao-confirm-provider'
+import {
+  readPedidoMaloteContext,
+  updatePedidoMaloteAfterSubmit,
+} from '@/lib/solicitacoes-inventario-client'
 
 interface Pasta {
   id: string
@@ -176,6 +180,7 @@ export default function DocumentosPage() {
   async function handleUpload() {
     if (!uploadFile || !currentId) return
     let comentario = uploadDesc
+    let adicionarMaisPedidos = false
     if (!isAdmin) {
       const solicitacao = await confirmSolicitacao({
         title: 'Solicitar aprovação de upload?',
@@ -183,6 +188,7 @@ export default function DocumentosPage() {
       })
       if (!solicitacao.confirmed) return
       comentario = solicitacao.comentario || uploadDesc
+      adicionarMaisPedidos = solicitacao.adicionarMaisPedidos
     }
 
     setUploading(true)
@@ -192,6 +198,8 @@ export default function DocumentosPage() {
       formData.append('file', uploadFile)
       if (uploadDesc) formData.append('descricao', uploadDesc)
       if (comentario) formData.append('comentario', comentario)
+      const maloteContext = readPedidoMaloteContext()
+      if (maloteContext) formData.append('pedido_pai_id', maloteContext.pedido_pai_id)
 
       setUploadProgress(40)
       const res = await fetch(`/api/forum/pastas/${currentId}/upload`, {
@@ -207,7 +215,14 @@ export default function DocumentosPage() {
 
       setUploadProgress(100)
       const json = await res.json().catch(() => ({}))
-      toast.success(json.pending_approval ? 'Pedido de upload enviado para aprovação.' : 'Arquivo enviado!')
+      if (json.pending_approval) {
+        updatePedidoMaloteAfterSubmit(adicionarMaisPedidos, json.solicitacao, uploadFile.name)
+      }
+      toast.success(
+        json.pending_approval
+          ? adicionarMaisPedidos ? 'Pedido de upload enviado. Malote ativo para o próximo pedido.' : 'Pedido de upload enviado para aprovação.'
+          : 'Arquivo enviado!',
+      )
       setShowUpload(false)
       setUploadFile(null)
       setUploadDesc('')

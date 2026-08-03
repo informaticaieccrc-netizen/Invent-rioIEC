@@ -29,6 +29,10 @@ type SolicitacaoInventarioAplicavel = {
   acao: string
   dados_anteriores: Record<string, unknown> | null
   dados_propostos: Record<string, unknown> | null
+  comentarios?: unknown
+  pedido_pai_id?: string | null
+  malote_id?: string | null
+  malote_ordem?: number | null
 }
 
 type SolicitacaoInventarioResponse = SolicitacaoInventarioAplicavel & {
@@ -42,6 +46,42 @@ const ALOCACAO_ASSET_KEYS: Record<string, string> = {
   alocacoes_ramais: 'ramal_id',
   alocacoes_monitores: 'monitor_id',
 }
+
+const SOLICITACAO_DISPLAY_ONLY_KEYS = new Set([
+  'id',
+  'created_at',
+  'updated_at',
+  'setor_nome',
+  'localidade_nome',
+  'colaborador_nome',
+  'maquina_label',
+  'notebook_label',
+  'aparelho_label',
+  'impressora_label',
+  'ramal_label',
+  'rack_label',
+  'monitor_label',
+  'recurso_label',
+  'setor_rel',
+  'localidade_rel',
+  'colaborador',
+  'maquina',
+  'notebook',
+  'aparelho',
+  'impressora',
+  'ramal',
+  'rack',
+  'alocacoes',
+  'alocacao_ativa',
+  'alocacoes_ativas',
+  '_count',
+  'pasta_nome',
+  'enviado_por_nome',
+  'nome_armazenado',
+  'url_publica',
+  'usuario_id',
+  'pasta_id',
+])
 
 export const SOLICITACAO_INVENTARIO_RECURSOS: Record<string, ResourceConfig> = {
   maquinas: { delegate: 'maquinas', label: 'Máquinas' },
@@ -250,6 +290,213 @@ function allocationCollaboratorLabel(payload: Record<string, unknown> | null | u
 function labelAtivo(prefixo: string, label: unknown) {
   const text = typeof label === 'string' ? label.trim() : ''
   return `${prefixo} ${text || 'sem identificação'}`
+}
+
+function changedRequestKeys(solicitacao: SolicitacaoInventarioAplicavel) {
+  const previous = solicitacao.dados_anteriores ?? {}
+  const next = solicitacao.dados_propostos ?? {}
+  if (solicitacao.acao === 'DELETE') return ['*']
+  if (solicitacao.acao === 'DEALLOCATE') return ['ativo', 'data_fim']
+
+  const proposedKeys = Object.keys(next).filter(key => !SOLICITACAO_DISPLAY_ONLY_KEYS.has(key))
+  if (solicitacao.acao === 'CREATE' || solicitacao.acao === 'ALLOCATE' || solicitacao.acao === 'UPLOAD') {
+    return proposedKeys.length > 0 ? proposedKeys : ['*']
+  }
+
+  if (proposedKeys.length > 0) {
+    return proposedKeys.filter(key => JSON.stringify(previous[key]) !== JSON.stringify(next[key]))
+  }
+
+  return Array.from(new Set([...Object.keys(previous), ...Object.keys(next)]))
+    .filter(key => !SOLICITACAO_DISPLAY_ONLY_KEYS.has(key))
+    .filter(key => JSON.stringify(previous[key]) !== JSON.stringify(next[key]))
+}
+
+function requestConflictTarget(solicitacao: SolicitacaoInventarioAplicavel) {
+  const tipoRecurso = solicitacao.tipo_recurso
+  if (solicitacao.recurso_id) return `${tipoRecurso}:${solicitacao.recurso_id}`
+
+  const next = solicitacao.dados_propostos ?? {}
+  const previous = solicitacao.dados_anteriores ?? {}
+  const assetId = allocationAssetId(tipoRecurso, next) ?? allocationAssetId(tipoRecurso, previous)
+  if (assetId) {
+    const colaboradorId = firstString(next.colaborador_id, previous.colaborador_id)
+    return colaboradorId
+      ? `${tipoRecurso}:${assetId}:colaborador:${colaboradorId}`
+      : `${tipoRecurso}:${assetId}`
+  }
+
+  const naturalKeys = ['endereco_ip', 'nome_host', 'codigo', 'numero_patrimonio', 'numero_ramal', 'nome']
+  const naturalId = naturalKeys.map(key => firstString(next[key], previous[key])).find(Boolean)
+  return naturalId ? `${tipoRecurso}:novo:${naturalId}` : `${tipoRecurso}:novo:${solicitacao.id}`
+}
+
+function requestConflictSignatures(solicitacao: SolicitacaoInventarioAplicavel) {
+  const target = requestConflictTarget(solicitacao)
+  return changedRequestKeys(solicitacao).map(key => `${target}:${key}`)
+}
+
+export function validarConflitosMaloteSolicitacoes(solicitacoes: SolicitacaoInventarioAplicavel[]) {
+  const seen = new Map<string, SolicitacaoInventarioAplicavel>()
+  for (const solicitacao of solicitacoes) {
+    for (const signature of requestConflictSignatures(solicitacao)) {
+      const previous = seen.get(signature)
+      if (!previous) {
+        seen.set(signature, solicitacao)
+        continue
+      }
+
+      const field = signature.split(':').at(-1) ?? 'campo'
+      throw new Error(`Conflito no malote: os pedidos ${previous.id} e ${solicitacao.id} alteram simultaneamente o campo ${field}.`)
+    }
+  }
+}
+
+function machineCollaboratorId(solicitacao: SolicitacaoInventarioAplicavel) {
+  if (solicitacao.tipo_recurso !== 'alocacoes_maquinas') return null
+  const proposedCollaborator = solicitacao.dados_propostos?.colaborador
+  const previousCollaborator = solicitacao.dados_anteriores?.colaborador
+  return firstString(
+    solicitacao.dados_propostos?.colaborador_id,
+    solicitacao.dados_anteriores?.colaborador_id,
+    proposedCollaborator && typeof proposedCollaborator === 'object' && !Array.isArray(proposedCollaborator)
+      ? (proposedCollaborator as Record<string, unknown>).id
+      : null,
+    previousCollaborator && typeof previousCollaborator === 'object' && !Array.isArray(previousCollaborator)
+      ? (previousCollaborator as Record<string, unknown>).id
+      : null,
+  )
+}
+
+export function ordenarSolicitacoesParaAplicacao(solicitacoes: SolicitacaoInventarioAplicavel[]) {
+  const priority: Record<string, number> = {
+    DEALLOCATE: 0,
+    DELETE: 1,
+    UPDATE: 2,
+    CORRECTION: 2,
+    CREATE: 3,
+    ALLOCATE: 4,
+    UPLOAD: 5,
+  }
+
+  return [...solicitacoes].sort((a, b) => {
+    const collaboratorA = machineCollaboratorId(a)
+    const collaboratorB = machineCollaboratorId(b)
+    if (collaboratorA && collaboratorA === collaboratorB && a.acao !== b.acao) {
+      return (priority[a.acao] ?? 10) - (priority[b.acao] ?? 10)
+    }
+
+    const orderA = typeof a.malote_ordem === 'number' ? a.malote_ordem : 1
+    const orderB = typeof b.malote_ordem === 'number' ? b.malote_ordem : 1
+    return orderA - orderB
+  })
+}
+
+export async function buscarSolicitacoesPendentesDoMalote(solicitacao: SolicitacaoInventarioAplicavel) {
+  const rootId = solicitacao.malote_id ?? solicitacao.id
+  const delegate = (prisma as any).solicitacoes_inventario as any
+  const pedidos = await delegate.findMany({
+    where: {
+      status: 'pendente',
+      OR: [{ id: rootId }, { malote_id: rootId }],
+    },
+    orderBy: [{ malote_ordem: 'asc' }, { created_at: 'asc' }],
+  })
+
+  return pedidos.length > 0 ? pedidos : [solicitacao]
+}
+
+export async function resolverMaloteNovaSolicitacao(params: {
+  pedidoPaiId?: string | null
+  usuarioId: string | null
+  isAdmin: boolean
+  novaSolicitacao: SolicitacaoInventarioAplicavel
+}) {
+  if (!params.pedidoPaiId) return { pedido_pai_id: null, malote_id: null, malote_ordem: 1 }
+
+  const delegate = (prisma as any).solicitacoes_inventario as any
+  const pedidoPai = await delegate.findUnique({ where: { id: params.pedidoPaiId } })
+  if (!pedidoPai) throw new Error('Pedido base do malote não encontrado')
+  if (pedidoPai.status !== 'pendente') throw new Error('Só é possível empilhar pedidos sobre solicitações pendentes')
+  if (!params.isAdmin && pedidoPai.solicitante_id !== params.usuarioId) {
+    throw new Error('Só é possível empilhar pedidos sobre solicitações do próprio usuário')
+  }
+
+  const maloteId = pedidoPai.malote_id ?? pedidoPai.id
+  const pendentes = await delegate.findMany({
+    where: {
+      status: 'pendente',
+      OR: [{ id: maloteId }, { malote_id: maloteId }],
+    },
+    orderBy: [{ malote_ordem: 'asc' }, { created_at: 'asc' }],
+  })
+
+  validarConflitosMaloteSolicitacoes([...pendentes, { ...params.novaSolicitacao, id: '__novo_pedido__' }])
+
+  const maxOrder = pendentes.reduce((max: number, pedido: SolicitacaoInventarioAplicavel) => {
+    return Math.max(max, typeof pedido.malote_ordem === 'number' ? pedido.malote_ordem : 1)
+  }, 1)
+
+  return {
+    pedido_pai_id: pedidoPai.id,
+    malote_id: maloteId,
+    malote_ordem: maxOrder + 1,
+  }
+}
+
+export async function validarColaboradorSemOutraMaquinaAtiva(params: {
+  colaboradorId: string | null
+  maquinaId?: string | null
+  ignoreAllocationId?: string | null
+  origem?: 'pedido' | 'administrativo'
+  client?: any
+}) {
+  if (!params.colaboradorId) return
+  const client = params.client ?? prisma
+
+  const mesmaMaquinaAtiva = params.maquinaId ? await client.alocacoes_maquinas.findFirst({
+    where: {
+      colaborador_id: params.colaboradorId,
+      maquina_id: params.maquinaId,
+      ativo: true,
+      ...(params.ignoreAllocationId ? { id: { not: params.ignoreAllocationId } } : {}),
+    },
+    include: { maquina: { select: { endereco_ip: true, nome_host: true, identificador: true, categoria: true } } },
+  }) : null
+
+  if (mesmaMaquinaAtiva) {
+    const label = firstDisplayString(mesmaMaquinaAtiva.maquina?.endereco_ip, mesmaMaquinaAtiva.maquina?.nome_host, mesmaMaquinaAtiva.maquina?.identificador)
+    throw new Error(`Colaborador já possui alocação ativa nesta máquina${label ? ` (${label})` : ''}.`)
+  }
+
+  const novaMaquina = params.maquinaId ? await client.maquinas.findUnique({
+    where: { id: params.maquinaId },
+    select: { categoria: true },
+  }) : null
+  if (novaMaquina?.categoria !== 'Administrativa') return
+
+  const ativas = await client.alocacoes_maquinas.findMany({
+    where: {
+      colaborador_id: params.colaboradorId,
+      ativo: true,
+      ...(params.ignoreAllocationId ? { id: { not: params.ignoreAllocationId } } : {}),
+    },
+    include: { maquina: { select: { endereco_ip: true, nome_host: true, identificador: true, categoria: true } } },
+  })
+  const ativaAdministrativa = ativas.find((alocacao: any) => {
+    return alocacao.maquina_id !== params.maquinaId && alocacao.maquina?.categoria === 'Administrativa'
+  })
+  if (!ativaAdministrativa) return
+
+  const label = firstDisplayString(
+    ativaAdministrativa.maquina?.endereco_ip,
+    ativaAdministrativa.maquina?.nome_host,
+    ativaAdministrativa.maquina?.identificador,
+  )
+  const acao = params.origem === 'administrativo'
+    ? 'Encerre a alocação administrativa atual antes de criar outra.'
+    : 'Encerre a alocação administrativa atual ou inclua a desalocação no mesmo malote antes de aprovar.'
+  throw new Error(`Colaborador já possui máquina administrativa ativa${label ? ` (${label})` : ''}. ${acao}`)
 }
 
 async function registrarDesalocacoesPorInativacao(
@@ -535,10 +782,20 @@ export async function aplicarSolicitacaoInventario(
     }
   } else if (acao === 'CREATE' || acao === 'ALLOCATE') {
     if (acao === 'ALLOCATE' && isAllocationResource && recursoId) {
+      if (tipoRecurso === 'alocacoes_maquinas') {
+        const colaboradorId = typeof dadosPropostos.colaborador_id === 'string' ? dadosPropostos.colaborador_id : null
+        const maquinaId = typeof dadosPropostos.maquina_id === 'string' ? dadosPropostos.maquina_id : null
+        await validarColaboradorSemOutraMaquinaAtiva({ colaboradorId, maquinaId, ignoreAllocationId: recursoId })
+      }
       const now = new Date()
       await delegate.update({ where: { id: recursoId }, data: { ativo: false, data_fim: now } })
       resultado = await delegate.create({ data: { ...dadosPropostos, data_inicio: now, ativo: true } })
     } else {
+      if (tipoRecurso === 'alocacoes_maquinas' && acao === 'ALLOCATE') {
+        const colaboradorId = typeof dadosPropostos.colaborador_id === 'string' ? dadosPropostos.colaborador_id : null
+        const maquinaId = typeof dadosPropostos.maquina_id === 'string' ? dadosPropostos.maquina_id : null
+        await validarColaboradorSemOutraMaquinaAtiva({ colaboradorId, maquinaId })
+      }
       resultado = await delegate.create({ data: dadosPropostos })
     }
     auditAction = recurso.alocacao || acao === 'ALLOCATE' ? 'ALOCAR' : 'CREATE'

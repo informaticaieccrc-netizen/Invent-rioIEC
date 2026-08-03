@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { usePermission } from '@/hooks/use-permission'
 import { useSolicitacaoInventarioConfirm } from '@/components/solicitacoes-inventario/solicitacao-confirm-provider'
 import { writePendingInspectPreview } from '@/lib/navigation-context'
+import { updatePedidoMaloteAfterSubmit, withPedidoMaloteContext } from '@/lib/solicitacoes-inventario-client'
 
 type TipoItem = 'maquinas' | 'notebooks' | 'aparelhos' | 'ramais'
 
@@ -121,12 +122,12 @@ export function AdicionarAlocacaoForm({ colaboradorId, onSuccess }: Props) {
         const res = await fetch('/api/solicitacoes-inventario', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+          body: JSON.stringify(withPedidoMaloteContext({
             tipo_recurso: `alocacoes_${tipo}`,
             acao: 'ALLOCATE',
             dados_propostos: body,
             comentario: solicitacao.comentario,
-          }),
+          })),
         })
         if (!res.ok) {
           const err = await res.json().catch(() => ({}))
@@ -134,13 +135,14 @@ export function AdicionarAlocacaoForm({ colaboradorId, onSuccess }: Props) {
         }
 
         const pedido = await res.json().catch(() => null)
-        toast.success('Solicitação enviada para aprovação.')
+        updatePedidoMaloteAfterSubmit(solicitacao.adicionarMaisPedidos, pedido, selected.label)
+        toast.success(solicitacao.adicionarMaisPedidos ? 'Solicitação enviada. Malote ativo para o próximo pedido.' : 'Solicitação enviada para aprovação.')
         setOpen(false)
         setQuery('')
         setSelected(null)
         setWhatsapp(false)
         onSuccess()
-        abrirPedidoCriado(pedido)
+        if (!solicitacao.adicionarMaisPedidos) abrirPedidoCriado(pedido)
         return
       }
 
