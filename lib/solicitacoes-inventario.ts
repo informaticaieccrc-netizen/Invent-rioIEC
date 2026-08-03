@@ -29,6 +29,7 @@ type SolicitacaoInventarioAplicavel = {
   acao: string
   dados_anteriores: Record<string, unknown> | null
   dados_propostos: Record<string, unknown> | null
+  comentarios?: unknown
   pedido_pai_id?: string | null
   malote_id?: string | null
   malote_ordem?: number | null
