@@ -4,6 +4,7 @@ import {
   useSolicitacaoInventarioConfirm,
   useSolicitacaoInventarioPerfil,
 } from '@/components/solicitacoes-inventario/solicitacao-confirm-provider'
+import { updatePedidoMaloteAfterSubmit, withPedidoMaloteContext } from '@/lib/solicitacoes-inventario-client'
 
 const REQUESTABLE_ENTITIES = new Set([
   'maquinas',
@@ -34,20 +35,22 @@ export function useCreate(entity: string, onSuccess?: () => void) {
         const res = await fetch('/api/solicitacoes-inventario', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+          body: JSON.stringify(withPedidoMaloteContext({
             tipo_recurso: entity,
             acao: entity.startsWith('alocacoes_') ? 'ALLOCATE' : 'CREATE',
             dados_propostos: data,
             comentario: solicitacao.comentario,
-          }),
+          })),
         })
         if (!res.ok) {
           const err = await res.json().catch(() => ({}))
           throw new Error(err.error || 'Erro ao criar solicitação')
         }
-        toast.success('Solicitação enviada para aprovação.')
+        const pedido = await res.json()
+        updatePedidoMaloteAfterSubmit(solicitacao.adicionarMaisPedidos, pedido)
+        toast.success(solicitacao.adicionarMaisPedidos ? 'Solicitação enviada. Malote ativo para o próximo pedido.' : 'Solicitação enviada para aprovação.')
         onSuccess?.()
-        return { __solicitacaoInventario: true, solicitacao: await res.json() }
+        return { __solicitacaoInventario: true, solicitacao: pedido }
       }
 
       const res = await fetch(`/api/${entity}`, {

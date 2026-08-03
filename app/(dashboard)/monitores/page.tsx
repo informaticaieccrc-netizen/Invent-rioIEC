@@ -30,6 +30,7 @@ import { useInspectNavigation } from '@/hooks/use-inspect-navigation'
 import { usePermission } from '@/hooks/use-permission'
 import { useSolicitacaoInventarioConfirm } from '@/components/solicitacoes-inventario/solicitacao-confirm-provider'
 import { writePendingInspectPreview } from '@/lib/navigation-context'
+import { updatePedidoMaloteAfterSubmit, withPedidoMaloteContext } from '@/lib/solicitacoes-inventario-client'
 
 type MonitorRow = {
   id: string
@@ -212,17 +213,19 @@ function MachineSearch({
         const res = await fetch('/api/solicitacoes-inventario', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+          body: JSON.stringify(withPedidoMaloteContext({
             tipo_recurso: 'alocacoes_monitores',
             recurso_id: monitor.id,
             acao: 'ALLOCATE',
             dados_anteriores: currentAllocation,
             dados_propostos: proposed,
             comentario: solicitacao.comentario,
-          }),
+          })),
         })
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'Erro ao criar pedido.')
-        toast.success('Solicitação enviada para aprovação.')
+        const pedido = await res.json().catch(() => null)
+        updatePedidoMaloteAfterSubmit(solicitacao.adicionarMaisPedidos, pedido, selected.label)
+        toast.success(solicitacao.adicionarMaisPedidos ? 'Solicitação enviada. Malote ativo para o próximo pedido.' : 'Solicitação enviada para aprovação.')
         setQuery('')
         setSelected(null)
         return

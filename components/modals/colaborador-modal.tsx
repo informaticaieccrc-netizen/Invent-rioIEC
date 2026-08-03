@@ -15,6 +15,7 @@ import { ColaboradorAlocacoes } from "@/components/modals/colaborador-alocacoes"
 import { useCrud } from "@/hooks/use-crud";
 import { formatDate } from "@/lib/utils";
 import type { Colaborador } from "@/types";
+import { withPedidoMaloteContext } from '@/lib/solicitacoes-inventario-client'
 import { SetorSelect } from "./setor-select";
 import { LocalidadeSelect } from "./localidade-select";
 import { toast } from "sonner";
@@ -121,14 +122,14 @@ export function ColaboradorModal({ colaborador, onClose, onRefresh }: Props) {
     const res = await fetch("/api/solicitacoes-inventario", {
      method: "POST",
      headers: { "Content-Type": "application/json" },
-     body: JSON.stringify({
+     body: JSON.stringify(withPedidoMaloteContext({
       tipo_recurso: "colaboradores",
       recurso_id: colaborador.id,
       acao: "UPDATE",
       dados_anteriores: colaborador,
       dados_propostos: { status: "Inativo" },
       comentario: "Solicitação de inativação de colaborador.",
-     }),
+     })),
     });
     if (!res.ok) {
      const err = await res.json().catch(() => ({}));

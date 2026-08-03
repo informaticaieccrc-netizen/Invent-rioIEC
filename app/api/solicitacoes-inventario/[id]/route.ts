@@ -7,8 +7,11 @@ import { prisma } from '@/lib/prisma'
 import { getAuditSession, registrarAuditoria } from '@/lib/audit'
 import {
   aplicarSolicitacaoInventario,
+  buscarSolicitacoesPendentesDoMalote,
   descartarUploadPendenteSolicitacao,
+  ordenarSolicitacoesParaAplicacao,
   sanitizeSolicitacaoInventarioResponse,
+  validarConflitosMaloteSolicitacoes,
 } from '@/lib/solicitacoes-inventario'
 
 export const runtime = 'nodejs'
@@ -82,34 +85,43 @@ export async function PATCH(request: Request, { params }: Props) {
       : existingComentarios(solicitacao.comentarios)
 
     if (decisao === 'recusar' || decisao === 'recusada' || decisao === 'rejeitar') {
-      await descartarUploadPendenteSolicitacao(solicitacao)
+      const malotePendentes = await buscarSolicitacoesPendentesDoMalote(solicitacao)
+      let recusadaSelecionada = null
 
-      const recusada = await delegate.update({
-        where: { id },
-        data: {
-          status: 'recusada',
-          parecer,
-          comentarios: comentarios as Prisma.InputJsonValue,
-          erro_aplicacao: null,
-          revisor_id: reviewer.usuario_id,
-          revisor_nome: reviewer.usuario_nome,
-          revisado_em: new Date(),
-          updated_at: new Date(),
-        },
-      })
+      for (const pedido of malotePendentes) {
+        await descartarUploadPendenteSolicitacao(pedido)
+        const pedidoComentarios = pedido.id === id ? comentarios : existingComentarios(pedido.comentarios)
+        const recusada = await delegate.update({
+          where: { id: pedido.id },
+          data: {
+            status: 'recusada',
+            parecer,
+            comentarios: pedidoComentarios as Prisma.InputJsonValue,
+            erro_aplicacao: null,
+            revisor_id: reviewer.usuario_id,
+            revisor_nome: reviewer.usuario_nome,
+            revisado_em: new Date(),
+            updated_at: new Date(),
+          },
+        })
 
-      await registrarAuditoria({
-        tabela: 'solicitacoes_inventario',
-        registro_id: id,
-        acao: 'RECUSAR',
-        descricao: `Solicitação de inventário recusada${parecer ? `: ${parecer}` : ''}`,
-        dados_anteriores: solicitacao as any,
-        dados_novos: recusada as any,
-        usuario_id: reviewer.usuario_id,
-        usuario_nome: reviewer.usuario_nome,
-      })
+        if (pedido.id === id) recusadaSelecionada = recusada
 
-      return NextResponse.json(sanitizeSolicitacaoInventarioResponse(recusada))
+        await registrarAuditoria({
+          tabela: 'solicitacoes_inventario',
+          registro_id: pedido.id,
+          acao: 'RECUSAR',
+          descricao: malotePendentes.length > 1
+            ? `Malote de inventário recusado${parecer ? `: ${parecer}` : ''}`
+            : `Solicitação de inventário recusada${parecer ? `: ${parecer}` : ''}`,
+          dados_anteriores: pedido as any,
+          dados_novos: recusada as any,
+          usuario_id: reviewer.usuario_id,
+          usuario_nome: reviewer.usuario_nome,
+        })
+      }
+
+      return NextResponse.json(sanitizeSolicitacaoInventarioResponse(recusadaSelecionada ?? malotePendentes[0]))
     }
 
     if (decisao !== 'aprovar' && decisao !== 'aprovada') {
@@ -117,33 +129,43 @@ export async function PATCH(request: Request, { params }: Props) {
     }
 
     try {
-      const aplicado = await aplicarSolicitacaoInventario(solicitacao, reviewer)
-      const aprovada = await delegate.update({
-        where: { id },
-        data: {
-          status: 'aprovada',
-          parecer,
-          comentarios: comentarios as Prisma.InputJsonValue,
-          erro_aplicacao: null,
-          revisor_id: reviewer.usuario_id,
-          revisor_nome: reviewer.usuario_nome,
-          revisado_em: new Date(),
-          updated_at: new Date(),
-        },
-      })
+      const malotePendentes = await buscarSolicitacoesPendentesDoMalote(solicitacao)
+      validarConflitosMaloteSolicitacoes(malotePendentes)
+      const ordenadas = ordenarSolicitacoesParaAplicacao(malotePendentes)
+      let aprovadaSelecionada = null
 
-      await registrarAuditoria({
-        tabela: 'solicitacoes_inventario',
-        registro_id: id,
-        acao: 'APROVAR',
-        descricao: 'Solicitação de inventário aprovada',
-        dados_anteriores: solicitacao as any,
-        dados_novos: { solicitacao: aprovada, aplicado } as Prisma.InputJsonObject,
-        usuario_id: reviewer.usuario_id,
-        usuario_nome: reviewer.usuario_nome,
-      })
+      for (const pedido of ordenadas) {
+        const aplicado = await aplicarSolicitacaoInventario(pedido, reviewer)
+        const pedidoComentarios = pedido.id === id ? comentarios : existingComentarios(pedido.comentarios)
+        const aprovada = await delegate.update({
+          where: { id: pedido.id },
+          data: {
+            status: 'aprovada',
+            parecer,
+            comentarios: pedidoComentarios as Prisma.InputJsonValue,
+            erro_aplicacao: null,
+            revisor_id: reviewer.usuario_id,
+            revisor_nome: reviewer.usuario_nome,
+            revisado_em: new Date(),
+            updated_at: new Date(),
+          },
+        })
 
-      return NextResponse.json(sanitizeSolicitacaoInventarioResponse(aprovada))
+        if (pedido.id === id) aprovadaSelecionada = aprovada
+
+        await registrarAuditoria({
+          tabela: 'solicitacoes_inventario',
+          registro_id: pedido.id,
+          acao: 'APROVAR',
+          descricao: malotePendentes.length > 1 ? 'Pedido aprovado dentro de malote de inventário' : 'Solicitação de inventário aprovada',
+          dados_anteriores: pedido as any,
+          dados_novos: { solicitacao: aprovada, aplicado } as Prisma.InputJsonObject,
+          usuario_id: reviewer.usuario_id,
+          usuario_nome: reviewer.usuario_nome,
+        })
+      }
+
+      return NextResponse.json(sanitizeSolicitacaoInventarioResponse(aprovadaSelecionada ?? ordenadas[0]))
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Erro ao aplicar solicitação'
       const atualizada = await delegate.update({

@@ -541,6 +541,9 @@ model solicitacoes_inventario {
   dados_anteriores  Json?
   dados_propostos   Json?
   comentarios       Json?     @default("[]")
+  pedido_pai_id     String?   @db.Uuid
+  malote_id         String?   @db.Uuid
+  malote_ordem      Int       @default(1)
   solicitante_id    String?   @db.Uuid
   solicitante_nome  String?
   revisor_id        String?   @db.Uuid
@@ -554,6 +557,8 @@ model solicitacoes_inventario {
   @@index([status], map: "idx_solicitacoes_inventario_status")
   @@index([tipo_recurso], map: "idx_solicitacoes_inventario_tipo_recurso")
   @@index([solicitante_id], map: "idx_solicitacoes_inventario_solicitante")
+  @@index([pedido_pai_id], map: "idx_solicitacoes_inventario_pedido_pai")
+  @@index([malote_id], map: "idx_solicitacoes_inventario_malote")
   @@index([created_at(sort: Desc)], map: "idx_solicitacoes_inventario_created_at")
 }
 

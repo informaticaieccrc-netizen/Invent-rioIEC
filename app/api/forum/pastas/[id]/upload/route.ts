@@ -6,7 +6,10 @@ import { authOptions, isPrivilegedProfile } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { uploadArquivo } from '@/lib/supabase-storage'
 import { registrarAuditoria } from '@/lib/audit'
-import { sanitizeSolicitacaoInventarioResponse } from '@/lib/solicitacoes-inventario'
+import {
+  resolverMaloteNovaSolicitacao,
+  sanitizeSolicitacaoInventarioResponse,
+} from '@/lib/solicitacoes-inventario'
 
 export const runtime = 'nodejs'
 type Props = { params: Promise<{ id: string }> }
@@ -61,6 +64,7 @@ export async function POST(request: Request, { params }: Props) {
     const formData = await request.formData()
     const file     = formData.get('file') as File | null
     const comentario = formData.get('comentario')
+    const pedidoPaiId = formData.get('pedido_pai_id')
 
     if (!file) return NextResponse.json({ error: 'Arquivo não enviado' }, { status: 400 })
     if (file.size > MAX_SIZE) return NextResponse.json({ error: 'Arquivo muito grande (máx 20MB)' }, { status: 400 })
@@ -82,6 +86,19 @@ export async function POST(request: Request, { params }: Props) {
         enviado_por_nome: userName,
       }
       const comentarioInicial = buildComentario(comentario, { id: userId, nome: userName }, 'solicitante')
+      const malote = await resolverMaloteNovaSolicitacao({
+        pedidoPaiId: typeof pedidoPaiId === 'string' ? pedidoPaiId : null,
+        usuarioId: userId,
+        isAdmin,
+        novaSolicitacao: {
+          id: '__novo_pedido__',
+          tipo_recurso: 'forum_arquivos',
+          recurso_id: null,
+          acao: 'UPLOAD',
+          dados_anteriores: { pasta_id, pasta_nome: pasta.nome },
+          dados_propostos: dadosPropostos,
+        },
+      })
       const solicitacao = await (prisma as any).solicitacoes_inventario.create({
         data: {
           status: 'pendente',
@@ -91,10 +108,21 @@ export async function POST(request: Request, { params }: Props) {
           dados_anteriores: { pasta_id, pasta_nome: pasta.nome } as Prisma.InputJsonValue,
           dados_propostos: dadosPropostos as Prisma.InputJsonValue,
           comentarios: (comentarioInicial ? [comentarioInicial] : []) as Prisma.InputJsonValue,
+          pedido_pai_id: malote.pedido_pai_id,
+          malote_id: malote.malote_id,
+          malote_ordem: malote.malote_ordem,
           solicitante_id: userId,
           solicitante_nome: userName,
         },
       })
+
+      if (!malote.malote_id) {
+        await (prisma as any).solicitacoes_inventario.update({
+          where: { id: solicitacao.id },
+          data: { malote_id: solicitacao.id },
+        })
+        solicitacao.malote_id = solicitacao.id
+      }
 
       await registrarAuditoria({
         tabela: 'solicitacoes_inventario',
@@ -146,6 +174,17 @@ export async function POST(request: Request, { params }: Props) {
     return NextResponse.json(arquivo, { status: 201 })
   } catch (err) {
     console.error('[POST /api/forum/pastas/[id]/upload]', err)
+    if (err instanceof Error) {
+      if (err.message.startsWith('Conflito no malote')) {
+        return NextResponse.json({ error: err.message }, { status: 409 })
+      }
+      if (
+        err.message.startsWith('Pedido base do malote') ||
+        err.message.startsWith('Só é possível empilhar')
+      ) {
+        return NextResponse.json({ error: err.message }, { status: 400 })
+      }
+    }
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
   }
 }

@@ -3,8 +3,20 @@ import { getServerSession } from 'next-auth'
 import { authOptions, requireAdmin } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { registrarAuditoria, getAuditSession } from '@/lib/audit'
+import { validarColaboradorSemOutraMaquinaAtiva } from '@/lib/solicitacoes-inventario'
 
 export const runtime = 'nodejs'
+
+function isAllocationConflictError(error: unknown) {
+  if (!(error instanceof Error)) return false
+  const message = error.message.toLowerCase()
+  return (
+    message.includes('alocação ativa') ||
+    message.includes('máquina ativa') ||
+    message.includes('máquina administrativa ativa') ||
+    (message.includes('já possui') && (message.includes('máquina') || message.includes('alocação')))
+  )
+}
 
 export async function POST(request: Request) {
   const denied = await requireAdmin()
@@ -20,6 +32,7 @@ export async function POST(request: Request) {
     }
 
     const { usuario_id, usuario_nome } = await getAuditSession()
+    await validarColaboradorSemOutraMaquinaAtiva({ colaboradorId: colaborador_id, maquinaId: maquina_id, origem: 'administrativo' })
 
     const colaborador = await prisma.colaboradores.findUnique({
       where: { id: colaborador_id },
@@ -56,6 +69,9 @@ export async function POST(request: Request) {
     return NextResponse.json(alocacao, { status: 201 })
   } catch (err) {
     console.error('[POST /api/alocacoes/maquinas]', err)
+    if (isAllocationConflictError(err) && err instanceof Error) {
+      return NextResponse.json({ error: err.message }, { status: 409 })
+    }
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 })
   }
 }
