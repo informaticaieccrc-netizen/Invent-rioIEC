@@ -52,3 +52,7 @@ database-dumps/
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# saidas locais do Claude (nao versionar)
+/Claude outputs/
+/claude-outputs/
