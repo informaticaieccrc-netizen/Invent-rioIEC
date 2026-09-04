@@ -165,7 +165,7 @@ export default function ColaboradoresPage() {
       },
       'collaborator-sector': {
         label: `Setor: ${filter.value ?? 'Sem setor'}`,
-        predicate: (item) => getColaboradorSetor(item) === filter.value,
+        predicate: (item) => item.status === 'Ativo' && getColaboradorSetor(item) === filter.value,
       },
       location: {
         label: filter.label ?? 'Unidade selecionada',
@@ -238,7 +238,7 @@ export default function ColaboradoresPage() {
           value: sectorName,
           label: `Setor: ${sectorName}`,
           key: `collaborator-sector:${sectorName}`,
-          predicate: (item) => getColaboradorSetor(item) === sectorName,
+          predicate: (item) => item.status === 'Ativo' && getColaboradorSetor(item) === sectorName,
           })
         }
         return nextFilters

@@ -1270,8 +1270,10 @@ export function ColaboradorOverviewPanel({
   const activeItems = scopedItems.filter(item => item.status === 'Ativo')
   const metricActiveItems = scopedMetricItems.filter(item => item.status === 'Ativo')
   const active = metricActiveItems.length
-  const sectors = groupByLabel(scopedItems, item => item.setor_nome ?? 'Sem setor', scopedItems.length)
-  const metricSectors = groupByLabel(scopedMetricItems, item => item.setor_nome ?? 'Sem setor', scopedMetricItems.length)
+  // Colaborador inativo nao entra na composicao por setor: o setor dele e
+  // limpo na inativacao, e conta-lo aqui inflaria setores que ja nao tem gente.
+  const sectors = groupByLabel(activeItems, item => item.setor_nome ?? 'Sem setor', activeItems.length)
+  const metricSectors = groupByLabel(metricActiveItems, item => item.setor_nome ?? 'Sem setor', metricActiveItems.length)
   const withoutMachine = activeItems.filter(item => !item.alocacoes_maquinas_ativas).length
   const withoutNotebook = activeItems.filter(item => !item.alocacoes_notebooks_ativas).length
   const withoutPhone = activeItems.filter(item => !item.alocacoes_aparelhos_ativas).length
