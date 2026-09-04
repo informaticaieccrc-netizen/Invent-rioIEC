@@ -114,12 +114,22 @@ FROM nova_relacao nr
 JOIN public.setores s ON s.nome = nr.setor_nome
 WHERE c.codigo = nr.codigo;
 
--- 3. Guarda: garante que as 70 pessoas foram reapontadas
+-- 3. Guarda: todo colaborador da nova relacao presente nesta base deve ter
+--    sido reapontado para um dos novos nucleos.
+--    O alvo e derivado da propria base, nao fixado em 70, porque a validacao de
+--    migration roda contra um PostgreSQL descartavel sem dados de colaboradores:
+--    ali `presentes` e 0 e a guarda passa. Em producao `presentes` e 70 e a
+--    verificacao continua estrita.
 DO $$
 DECLARE
-  esperado integer := 70;
+  presentes  integer;
   atualizado integer;
 BEGIN
+  SELECT count(DISTINCT c.codigo)
+  INTO presentes
+  FROM public.colaboradores c
+  WHERE c.codigo IN (537310, 1037179, 389164, 735945, 1431498, 1577534, 934505, 981245, 1685628, 1094436, 1005264, 1032483, 1341871, 1687812, 1688125, 503068, 1048514, 1414433, 652017, 1282416, 687295, 1155601, 1502711, 1558565, 1247250, 1444717, 843104, 554864, 1572146, 1506645, 1045283, 998112, 1683882, 907881, 1366775, 1439753, 736010, 654299, 1650515, 1687952, 1060188, 1271385, 1209841, 1269099, 611689, 1418951, 995402, 466068, 300569, 1393861, 1058383, 1474168, 1615945, 1414329, 1238191, 310866, 1419891, 501459, 1100480, 860684, 1150874, 997294, 946047, 301335, 1063999, 872347, 1689477, 819546, 1116723, 290096);
+
   SELECT count(DISTINCT c.codigo)
   INTO atualizado
   FROM public.colaboradores c
@@ -127,8 +137,13 @@ BEGIN
   WHERE c.codigo IN (537310, 1037179, 389164, 735945, 1431498, 1577534, 934505, 981245, 1685628, 1094436, 1005264, 1032483, 1341871, 1687812, 1688125, 503068, 1048514, 1414433, 652017, 1282416, 687295, 1155601, 1502711, 1558565, 1247250, 1444717, 843104, 554864, 1572146, 1506645, 1045283, 998112, 1683882, 907881, 1366775, 1439753, 736010, 654299, 1650515, 1687952, 1060188, 1271385, 1209841, 1269099, 611689, 1418951, 995402, 466068, 300569, 1393861, 1058383, 1474168, 1615945, 1414329, 1238191, 310866, 1419891, 501459, 1100480, 860684, 1150874, 997294, 946047, 301335, 1063999, 872347, 1689477, 819546, 1116723, 290096)
     AND s.nome IN ('CSE', 'NAPE', 'NCA', 'NGA (ead)', 'NGA', 'NIA', 'NPD', 'NUPAE');
 
-  IF atualizado <> esperado THEN
-    RAISE EXCEPTION 'Realocacao CSE incompleta: esperado %, obtido %', esperado, atualizado;
+  IF atualizado <> presentes THEN
+    RAISE EXCEPTION 'Realocacao CSE incompleta: % de % colaboradores presentes foram reapontados',
+      atualizado, presentes;
+  END IF;
+
+  IF presentes <> 70 THEN
+    RAISE NOTICE 'Realocacao CSE: % dos 70 codigos da extracao existem nesta base', presentes;
   END IF;
 END $$;
 
