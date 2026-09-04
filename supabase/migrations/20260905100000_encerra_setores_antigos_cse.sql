@@ -19,9 +19,12 @@
 --   - O backfill do passo 2 limpa o setor de TODOS os colaboradores inativos,
 --     nao apenas dos 16 que estavam nos setores antigos. E o que torna a regra
 --     do trigger consistente com os dados existentes.
---   - Solicitacoes de checklist que apontavam para os setores antigos perdem
---     essa referencia (passam a NULL). E historico de solicitacao, nao de
---     inventario.
+--   - Solicitacoes de checklist em andamento (aberta/assumida) sao APAGADAS, a
+--     pedido, junto com seus itens, diffs e respostas de rack. O checklist sera
+--     reaberto depois. Solicitacoes ja concluidas que apontavam para um setor
+--     antigo tambem sao apagadas: a constraint check_checklist_solicitacao_alvo
+--     exige setor_id NOT NULL quando o tipo e SETOR, entao nao existe estado
+--     valido em que a linha sobrevive sem o setor.
 --   Cada passo emite NOTICE com a contagem afetada, entao o log da homologacao
 --   mostra exatamente o que foi tocado.
 
@@ -182,10 +185,20 @@ BEGIN
   GET DIAGNOSTICS n = ROW_COUNT; total := total + n;
   RAISE NOTICE 'racks liberados: %', n;
 
-  UPDATE public.checklists_validacao_solicitacoes SET setor_id = NULL
+  -- Solicitacoes de checklist NAO podem ser nulificadas: a constraint
+  -- check_checklist_solicitacao_alvo exige setor_id NOT NULL quando
+  -- tipo_solicitacao = 'SETOR'. Pelo mesmo motivo o ON DELETE SET NULL da FK
+  -- tambem falharia. As linhas sao removidas, e os filhos (itens, diffs,
+  -- respostas de rack) vao junto por ON DELETE CASCADE.
+  DELETE FROM public.checklists_validacao_solicitacoes
+   WHERE status IN ('aberta', 'assumida');
+  GET DIAGNOSTICS n = ROW_COUNT; total := total + n;
+  RAISE NOTICE 'solicitacoes de checklist em andamento apagadas (aberta/assumida): %', n;
+
+  DELETE FROM public.checklists_validacao_solicitacoes
    WHERE setor_id IN (SELECT id FROM _setores_antigos);
   GET DIAGNOSTICS n = ROW_COUNT; total := total + n;
-  RAISE NOTICE 'solicitacoes de checklist que perderam o setor: %', n;
+  RAISE NOTICE 'solicitacoes de checklist ja concluidas em setor antigo apagadas: %', n;
 
   UPDATE public.alocacoes_monitores SET setor_id = NULL
    WHERE setor_id IN (SELECT id FROM _setores_antigos);
